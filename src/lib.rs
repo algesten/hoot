@@ -26,7 +26,7 @@
 //!     .header("accept", "text/plain")?
 //!     .header("x-my-thing", "martin")?
 //!     // Finish takes us to awaiting the remote status. By using types, this is only available
-//!     // for HTTP verbs (methods) that have no buffer.
+//!     // for HTTP verbs (methods) that have no body.
 //!     .finish()?
 //!     // Again, release the buffer to write to a transport.
 //!     .flush();
