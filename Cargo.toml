@@ -1,0 +1,11 @@
+[package]
+name = "h1-call"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = []
+std = [] # to run tests
+
+[dependencies]
+httparse = { version = "1.8.0", default-features = false }
