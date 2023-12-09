@@ -3,28 +3,42 @@
 // For tests we use std.
 #![cfg_attr(not(test), no_std)]
 
-mod call;
-pub use call::{method, state, version, Call, CallState, Output, ParseResult, Status};
+mod out;
+mod util;
+
+mod model;
+pub use model::{Call, CallState, Output};
+
+mod state_vars;
+pub use state_vars::{method, state, version};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Status<'a>(pub u16, pub Option<&'a str>);
+
+mod recv;
+pub use recv::ParseResult;
+mod send;
 
 #[derive(Debug, Clone, Copy)]
-pub enum H1Error {
+pub enum HootError {
     OutputOverflow,
     ParseError(httparse::Error),
     InvalidHttpVersion,
+    InsufficientSpaceToParseHeaders,
 }
 
-pub type Result<T> = core::result::Result<T, H1Error>;
+pub(crate) static OVERFLOW: Result<()> = Err(HootError::OutputOverflow);
 
-impl From<httparse::Error> for H1Error {
+pub type Result<T> = core::result::Result<T, HootError>;
+
+impl From<httparse::Error> for HootError {
     fn from(value: httparse::Error) -> Self {
-        H1Error::ParseError(value)
+        HootError::ParseError(value)
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::call::ParseResult;
-    use crate::call::Status;
 
     use super::*;
 
