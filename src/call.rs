@@ -3,6 +3,7 @@ use core::marker::PhantomData;
 use core::mem;
 use core::mem::align_of;
 use core::mem::size_of;
+use core::ops::Deref;
 
 use crate::H1Error;
 use crate::Result;
@@ -29,18 +30,30 @@ impl CallState<(), (), ()> {
 
 #[allow(non_camel_case_types)]
 pub mod state {
-    pub struct STATE_INIT;
-    pub struct STATE_LINE;
-    pub struct STATE_HEADERS;
-    pub struct STATE_BODY;
-    pub struct STATE_STATUS;
-    pub struct STATE_HEADERS_RECV;
+    pub struct INIT;
+    pub struct SEND_LINE;
+    pub struct SEND_HEADERS;
+    pub struct SEND_BODY;
+    pub struct RECV_STATUS;
+    pub struct RECV_HEADERS;
 }
 
 #[allow(non_camel_case_types)]
 pub mod version {
     pub struct HTTP_10;
     pub struct HTTP_11;
+}
+
+impl HTTP_10 {
+    const fn version_str() -> &'static str {
+        "1.0"
+    }
+}
+
+impl HTTP_11 {
+    const fn version_str() -> &'static str {
+        "1.1"
+    }
 }
 
 #[allow(non_camel_case_types)]
@@ -68,12 +81,12 @@ mod private {
     pub trait Method {}
 
     impl State for () {}
-    impl State for STATE_INIT {}
-    impl State for STATE_LINE {}
-    impl State for STATE_HEADERS {}
-    impl State for STATE_BODY {}
-    impl State for STATE_STATUS {}
-    impl State for STATE_HEADERS_RECV {}
+    impl State for INIT {}
+    impl State for SEND_LINE {}
+    impl State for SEND_HEADERS {}
+    impl State for SEND_BODY {}
+    impl State for RECV_STATUS {}
+    impl State for RECV_HEADERS {}
 
     impl Version for () {
         fn httparse_version() -> u8 {
@@ -130,7 +143,7 @@ where
 }
 
 impl<'a> Call<'a, (), (), ()> {
-    pub fn new(buf: &'a mut [u8]) -> Call<'a, STATE_INIT, (), ()> {
+    pub fn new(buf: &'a mut [u8]) -> Call<'a, INIT, (), ()> {
         Call {
             state: CallState::new(),
             out: Out::wrap(buf),
@@ -144,8 +157,11 @@ where
     V: Version,
     M: Method,
 {
-    pub fn flush(self) -> (CallState<S, V, M>, &'a [u8]) {
-        (self.state, self.out.flush())
+    pub fn flush(self) -> Output<'a, S, V, M> {
+        Output {
+            state: self.state,
+            output: self.out.flush(),
+        }
     }
 
     pub fn resume(state: CallState<S, V, M>, buf: &'a mut [u8]) -> Call<'a, S, V, M> {
@@ -161,34 +177,82 @@ where
     }
 }
 
-impl<'a> Call<'a, STATE_INIT, (), ()> {
-    pub fn http_10(self) -> Call<'a, STATE_LINE, HTTP_10, ()> {
+pub struct Output<'a, S, V, M>
+where
+    S: State,
+    V: Version,
+    M: Method,
+{
+    state: CallState<S, V, M>,
+    output: &'a [u8],
+}
+
+impl<'a, S, V, M> Deref for Output<'a, S, V, M>
+where
+    S: State,
+    V: Version,
+    M: Method,
+{
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        &self.output
+    }
+}
+
+impl<'a, S, V, M> Output<'a, S, V, M>
+where
+    S: State,
+    V: Version,
+    M: Method,
+{
+    pub fn ready(self) -> CallState<S, V, M> {
+        self.state
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.output
+    }
+}
+
+impl<'a> Call<'a, INIT, (), ()> {
+    pub fn http_10(self) -> Call<'a, SEND_LINE, HTTP_10, ()> {
         self.transition()
     }
 
-    pub fn http_11(self) -> Call<'a, STATE_LINE, HTTP_11, ()> {
+    pub fn http_11(self) -> Call<'a, SEND_LINE, HTTP_11, ()> {
         self.transition()
     }
 }
 
-impl<'a> Call<'a, STATE_LINE, HTTP_10, ()> {
-    pub fn get(mut self, path: &str) -> Result<Call<'a, STATE_HEADERS, HTTP_10, GET>> {
-        write!(&mut self.out, "GET {} HTTP/1.0\r\n", path).or(OVERFLOW)?;
-        Ok(self.transition())
-    }
-
-    pub fn head(mut self, path: &str) -> Result<Call<'a, STATE_HEADERS, HTTP_10, HEAD>> {
-        write!(&mut self.out, "HEAD {} HTTP/1.0\r\n", path).or(OVERFLOW)?;
-        Ok(self.transition())
-    }
-
-    pub fn post(mut self, path: &str) -> Result<Call<'a, STATE_HEADERS, HTTP_10, POST>> {
-        write!(&mut self.out, "POST {} HTTP/1.0\r\n", path).or(OVERFLOW)?;
-        Ok(self.transition())
-    }
+macro_rules! send_method {
+    ($meth:ident, $meth_up:tt, $ver:ty) => {
+        pub fn $meth(mut self, path: &str) -> Result<Call<'a, SEND_HEADERS, $ver, $meth_up>> {
+            self.out
+                .write_send_line(stringify!($meth_up), path, <$ver>::version_str())?;
+            Ok(self.transition())
+        }
+    };
 }
 
-impl<'a, M: Method> Call<'a, STATE_HEADERS, HTTP_10, M> {
+impl<'a> Call<'a, SEND_LINE, HTTP_10, ()> {
+    send_method!(get, GET, HTTP_10);
+    send_method!(head, HEAD, HTTP_10);
+    send_method!(post, POST, HTTP_10);
+}
+
+impl<'a> Call<'a, SEND_LINE, HTTP_11, ()> {
+    send_method!(get, GET, HTTP_11);
+    send_method!(head, HEAD, HTTP_11);
+    send_method!(post, POST, HTTP_11);
+    send_method!(put, PUT, HTTP_11);
+    send_method!(delete, DELETE, HTTP_11);
+    // CONNECT
+    send_method!(options, OPTIONS, HTTP_11);
+    send_method!(trace, TRACE, HTTP_11);
+}
+
+impl<'a, M: Method, V: Version> Call<'a, SEND_HEADERS, V, M> {
     pub fn header(mut self, name: &str, value: &str) -> Result<Self> {
         write!(&mut self.out, "{}: {}\r\n", name, value).or(OVERFLOW)?;
         Ok(self)
@@ -202,20 +266,20 @@ impl<'a, M: Method> Call<'a, STATE_HEADERS, HTTP_10, M> {
     }
 }
 
-impl<'a, M: MethodWithBody> Call<'a, STATE_HEADERS, HTTP_10, M> {
-    pub fn with_body(mut self, length: u64) -> Result<Call<'a, STATE_BODY, HTTP_10, M>> {
+impl<'a, M: MethodWithBody> Call<'a, SEND_HEADERS, HTTP_10, M> {
+    pub fn with_body(mut self, length: u64) -> Result<Call<'a, SEND_BODY, HTTP_10, M>> {
         write!(&mut self.out, "Content-Length: {}\r\n\r\n", length).or(OVERFLOW)?;
         Ok(self.transition())
     }
 
-    pub fn without_body(mut self) -> Result<Call<'a, STATE_STATUS, HTTP_10, M>> {
+    pub fn without_body(mut self) -> Result<Call<'a, RECV_STATUS, HTTP_10, M>> {
         write!(&mut self.out, "\r\n").or(OVERFLOW)?;
         Ok(self.transition())
     }
 }
 
-impl<'a, V: Version, M: MethodWithoutBody> Call<'a, STATE_HEADERS, V, M> {
-    pub fn finish(mut self) -> Result<Call<'a, STATE_STATUS, HTTP_10, M>> {
+impl<'a, V: Version, M: MethodWithoutBody> Call<'a, SEND_HEADERS, V, M> {
+    pub fn finish(mut self) -> Result<Call<'a, RECV_STATUS, HTTP_10, M>> {
         write!(&mut self.out, "\r\n").or(OVERFLOW)?;
         Ok(self.transition())
     }
@@ -229,11 +293,11 @@ pub enum ParseResult<'a, S1: State, V: Version, M: Method, S2: State, T> {
     Complete(Call<'a, S2, V, M>, usize, T),
 }
 
-impl<'a, V: Version, M: Method> Call<'a, STATE_STATUS, V, M> {
+impl<'a, V: Version, M: Method> Call<'a, RECV_STATUS, V, M> {
     pub fn parse_status<'b>(
         self,
         buf: &'b [u8],
-    ) -> Result<ParseResult<'a, STATE_STATUS, V, M, STATE_HEADERS_RECV, Status<'b>>> {
+    ) -> Result<ParseResult<'a, RECV_STATUS, V, M, RECV_HEADERS, Status<'b>>> {
         let mut response = {
             // Borrow the byte buffer temporarily for header parsing.
             let tmp = &mut self.out.buf[self.out.pos..];
@@ -308,6 +372,10 @@ impl<'a> Out<'a> {
 
     fn flush(self) -> &'a [u8] {
         &self.buf[..self.pos]
+    }
+
+    fn write_send_line(&mut self, method: &str, path: &str, version: &str) -> Result<()> {
+        write!(self, "{} {} HTTP/{}\r\n", method, path, version).or(OVERFLOW)
     }
 }
 
