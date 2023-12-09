@@ -94,9 +94,14 @@ impl<'a, M: Method, V: Version> Call<'a, SEND_HEADERS, V, M, ()> {
         let headers = cast_buf_for_headers(buf)?;
 
         // These headers are forbidden because we write them with
-        check_forbidden_headers(name, HEADERS_FORBID_BODY, HootError::ForbiddenBodyHeader)?;
+        check_headers(name, HEADERS_FORBID_BODY, HootError::ForbiddenBodyHeader)?;
 
-        // TODO: forbid specific headers for 1.0/1.1
+        match V::httparse_version() {
+            // TODO: forbid specific headers for 1.0
+            1 => check_headers(name, HEADERS_FORBID_11, HootError::ForbiddenHttp11Header)?,
+            _ => {}
+        }
+
         // TODO: forbid headers that are not allowed to be repeated
 
         if let Err(e) = parse_headers(written, headers) {
@@ -171,6 +176,45 @@ impl<'a, V: Version, M: MethodWithoutBody> Call<'a, SEND_HEADERS, V, M, ()> {
     }
 }
 
+// Headers that are not allowed because we set them as part of making a call.
+const HEADERS_FORBID_BODY: &[&str] = &[
+    // header set by with_body()
+    "content-length",
+    // header set by with_chunked()
+    "transfer-encoding",
+];
+
+const HEADERS_FORBID_11: &[&str] = &[
+    // host is already set by the Call::<verb>(host, path)
+    "host",
+];
+
+fn check_headers(name: &str, forbidden: &[&str], err: HootError) -> Result<()> {
+    for c in forbidden {
+        // Length diffing, then not equal.
+        if name.len() != c.len() {
+            continue;
+        }
+
+        for (a, b) in name.chars().zip(c.chars()) {
+            if !a.is_ascii_alphabetic() {
+                // a is not even ascii, then not equal.
+                continue;
+            }
+            let norm = a.to_ascii_lowercase();
+            if norm != b {
+                // after normalizing a, not matching b, then not equal.
+                continue;
+            }
+        }
+
+        // name matched c. This is a forbidden header.
+        return Err(err);
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -205,38 +249,4 @@ mod test {
 
         Ok(())
     }
-}
-
-// Headers that are not allowed because we set them as part of making a call.
-const HEADERS_FORBID_BODY: &[&str] = &[
-    // header set by with_body()
-    "content-length",
-    // header set by with_chunked()
-    "transfer-encoding",
-];
-
-fn check_forbidden_headers(name: &str, forbidden: &[&str], err: HootError) -> Result<()> {
-    for c in forbidden {
-        // Length diffing, then not equal.
-        if name.len() != c.len() {
-            continue;
-        }
-
-        for (a, b) in name.chars().zip(c.chars()) {
-            if !a.is_ascii_alphabetic() {
-                // a is not even ascii, then not equal.
-                continue;
-            }
-            let norm = a.to_ascii_lowercase();
-            if norm != b {
-                // after normalizing a, not matching b, then not equal.
-                continue;
-            }
-        }
-
-        // name matched c. This is a forbidden header.
-        return Err(err);
-    }
-
-    Ok(())
 }

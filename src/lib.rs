@@ -51,6 +51,9 @@ pub enum HootError {
     /// `content-length` and `transfer-encoding` must be set using
     /// `with_body()` and `with_body_chunked()`.
     ForbiddenBodyHeader,
+
+    /// Header is not allowed for HTTP/1.1
+    ForbiddenHttp11Header,
 }
 
 pub(crate) static OVERFLOW: Result<()> = Err(HootError::OutputOverflow);
