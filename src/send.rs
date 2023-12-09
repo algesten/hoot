@@ -78,12 +78,14 @@ impl<'a> Call<'a, SEND_LINE, HTTP_11, (), ()> {
     write_line_11!(trace, TRACE);
 }
 
-impl<'a, M: Method, V: Version> Call<'a, SEND_HEADERS, V, M, ()> {
-    pub fn header(self, name: &str, value: &str) -> Result<Self> {
-        self.header_bytes(name, value.as_bytes())
-    }
-
-    pub fn header_bytes(mut self, name: &str, bytes: &[u8]) -> Result<Self> {
+impl<'a, S, V, M, B> Call<'a, S, V, M, B>
+where
+    S: State,
+    V: Version,
+    M: Method,
+    B: BodyType,
+{
+    fn header_raw(mut self, name: &str, bytes: &[u8], trailer: bool) -> Result<Self> {
         // Attempt writing the header
         let mut w = self.out.writer();
         write!(w, "{}: ", name).or(OVERFLOW)?;
@@ -94,13 +96,17 @@ impl<'a, M: Method, V: Version> Call<'a, SEND_HEADERS, V, M, ()> {
         let (written, buf) = w.split_and_borrow();
         let headers = cast_buf_for_headers(buf)?;
 
-        // These headers are forbidden because we write them with
-        check_headers(name, HEADERS_FORBID_BODY, HootError::ForbiddenBodyHeader)?;
+        if trailer {
+            check_headers(name, HEADERS_FORBID_TRAILER, HootError::ForbiddenTrailer)?;
+        } else {
+            // These headers are forbidden because we write them with
+            check_headers(name, HEADERS_FORBID_BODY, HootError::ForbiddenBodyHeader)?;
 
-        match V::httparse_version() {
-            // TODO: forbid specific headers for 1.0
-            1 => check_headers(name, HEADERS_FORBID_11, HootError::ForbiddenHttp11Header)?,
-            _ => {}
+            match V::httparse_version() {
+                // TODO: forbid specific headers for 1.0
+                1 => check_headers(name, HEADERS_FORBID_11, HootError::ForbiddenHttp11Header)?,
+                _ => {}
+            }
         }
 
         // TODO: forbid headers that are not allowed to be repeated
@@ -119,6 +125,16 @@ impl<'a, M: Method, V: Version> Call<'a, SEND_HEADERS, V, M, ()> {
         w.commit();
 
         Ok(self)
+    }
+}
+
+impl<'a, M: Method, V: Version> Call<'a, SEND_HEADERS, V, M, ()> {
+    pub fn header(self, name: &str, value: &str) -> Result<Self> {
+        self.header_raw(name, value.as_bytes(), false)
+    }
+
+    pub fn header_bytes(self, name: &str, bytes: &[u8]) -> Result<Self> {
+        self.header_raw(name, bytes, false)
     }
 }
 
@@ -216,6 +232,65 @@ impl<'a, V: Version, M: MethodWithBody> Call<'a, SEND_BODY, V, M, BODY_LENGTH> {
     }
 }
 
+impl<'a, V: Version, M: MethodWithBody> Call<'a, SEND_BODY, V, M, BODY_CHUNKED> {
+    pub fn write_chunk(&mut self, bytes: &[u8]) -> Result<()> {
+        // Writing no bytes is ok. Ending the chunk writing is by doing the complete() call.
+        if bytes.is_empty() {
+            return Ok(());
+        }
+
+        let mut w = self.out.writer();
+
+        // chunk length
+        write!(w, "{:0x?}\r\n", bytes.len()).or(OVERFLOW)?;
+
+        // chunk
+        w.write_bytes(bytes)?;
+
+        // chunk end
+        write!(w, "\r\n").or(OVERFLOW)?;
+
+        w.commit();
+
+        Ok(())
+    }
+
+    pub fn with_trailer(mut self) -> Result<Call<'a, SEND_TRAILER, V, M, ()>> {
+        let mut w = self.out.writer();
+        write!(w, "0\r\n").or(OVERFLOW)?;
+        w.commit();
+
+        Ok(self.transition())
+    }
+
+    pub fn complete(mut self) -> Result<Call<'a, RECV_STATUS, V, M, ()>> {
+        let mut w = self.out.writer();
+        write!(w, "0\r\n\r\n").or(OVERFLOW)?;
+        w.commit();
+
+        Ok(self.transition())
+    }
+}
+
+// TODO: ensure trailers are declared in a `Trailer: xxx` header.
+impl<'a, V: Version, M: MethodWithBody> Call<'a, SEND_TRAILER, V, M, ()> {
+    pub fn trailer(self, name: &str, value: &str) -> Result<Self> {
+        self.header_raw(name, value.as_bytes(), true)
+    }
+
+    pub fn trailer_bytes(self, name: &str, bytes: &[u8]) -> Result<Self> {
+        self.header_raw(name, bytes, true)
+    }
+
+    pub fn complete(mut self) -> Result<Call<'a, RECV_STATUS, V, M, ()>> {
+        let mut w = self.out.writer();
+        write!(w, "\r\n").or(OVERFLOW)?;
+        w.commit();
+
+        Ok(self.transition())
+    }
+}
+
 // Headers that are not allowed because we set them as part of making a call.
 const HEADERS_FORBID_BODY: &[&str] = &[
     // header set by with_body()
@@ -228,6 +303,26 @@ const HEADERS_FORBID_11: &[&str] = &[
     // host is already set by the Call::<verb>(host, path)
     "host",
 ];
+
+const HEADERS_FORBID_TRAILER: &[&str] = &[
+    "transfer-encoding",
+    "content-length",
+    "host",
+    "cache-control",
+    "max-forwards",
+    "authorization",
+    "set-cookie",
+    "content-type",
+    "content-range",
+    "te",
+    "trailer",
+];
+
+// message framing headers (e.g., Transfer-Encoding and Content-Length),
+// routing headers (e.g., Host),
+// request modifiers (e.g., controls and conditionals, like Cache-Control, Max-Forwards, or TE),
+// authentication headers (e.g., Authorization or Set-Cookie),
+// or Content-Encoding, Content-Type, Content-Range, and Trailer itself.
 
 fn check_headers(name: &str, forbidden: &[&str], err: HootError) -> Result<()> {
     for c in forbidden {

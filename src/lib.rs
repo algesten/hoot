@@ -55,6 +55,9 @@ pub enum HootError {
     /// Header is not allowed for HTTP/1.1
     ForbiddenHttp11Header,
 
+    /// The trailer name is not allowed.
+    ForbiddenTrailer,
+
     /// Attempt to send more content than declared in the `Content-Length` header.
     SentMoreThanContentLength,
 
