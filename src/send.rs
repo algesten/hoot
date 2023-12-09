@@ -249,4 +249,33 @@ mod test {
 
         Ok(())
     }
+    #[test]
+    pub fn test_illegal_body_header() -> Result<()> {
+        let mut buf = [0; 1024];
+
+        let x = Call::new(&mut buf)
+            .http_10()
+            .get("/path")?
+            .header("transfer-encoding", "chunked");
+
+        let e = x.unwrap_err();
+        assert_eq!(e, HootError::ForbiddenBodyHeader);
+
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_illegal_http11_header() -> Result<()> {
+        let mut buf = [0; 1024];
+
+        let x = Call::new(&mut buf)
+            .http_11()
+            .get("myhost.test:8080", "/path")?
+            .header("Host", "another.test:4489");
+
+        let e = x.unwrap_err();
+        assert_eq!(e, HootError::ForbiddenHttp11Header);
+
+        Ok(())
+    }
 }
