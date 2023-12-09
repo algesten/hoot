@@ -1,6 +1,7 @@
 use core::fmt::Write;
 
-use crate::body::{BODY_CHUNKED, BODY_LENGTH, BODY_NONE};
+use crate::body::{BODY_CHUNKED, BODY_LENGTH};
+use crate::model::SendByteChecker;
 use crate::out::Writer;
 use crate::util::cast_buf_for_headers;
 use crate::vars::private;
@@ -129,13 +130,17 @@ impl<'a, M: MethodWithBody> Call<'a, SEND_HEADERS, HTTP_10, M, ()> {
         let mut w = self.out.writer();
         write!(w, "Content-Length: {}\r\n\r\n", length).or(OVERFLOW)?;
         w.commit();
+
+        self.state.send_byte_checker = Some(SendByteChecker::new(length));
+
         Ok(self.transition())
     }
 
-    pub fn without_body(mut self) -> Result<Call<'a, RECV_STATUS, HTTP_11, M, BODY_NONE>> {
+    pub fn without_body(mut self) -> Result<Call<'a, RECV_STATUS, HTTP_11, M, ()>> {
         let mut w = self.out.writer();
         write!(w, "\r\n").or(OVERFLOW)?;
         w.commit();
+
         Ok(self.transition())
     }
 }
@@ -148,6 +153,9 @@ impl<'a, M: MethodWithBody> Call<'a, SEND_HEADERS, HTTP_11, M, ()> {
         let mut w = self.out.writer();
         write!(w, "Content-Length: {}\r\n\r\n", length).or(OVERFLOW)?;
         w.commit();
+
+        self.state.send_byte_checker = Some(SendByteChecker::new(length));
+
         Ok(self.transition())
     }
 
@@ -155,23 +163,55 @@ impl<'a, M: MethodWithBody> Call<'a, SEND_HEADERS, HTTP_11, M, ()> {
         let mut w = self.out.writer();
         write!(w, "Transfer-Encoding: chunked\r\n\r\n").or(OVERFLOW)?;
         w.commit();
+
         Ok(self.transition())
     }
 
-    pub fn without_body(mut self) -> Result<Call<'a, RECV_STATUS, HTTP_11, M, BODY_NONE>> {
+    pub fn without_body(mut self) -> Result<Call<'a, RECV_STATUS, HTTP_11, M, ()>> {
         let mut w = self.out.writer();
         write!(w, "\r\n").or(OVERFLOW)?;
         w.commit();
+
         Ok(self.transition())
     }
 }
 
 impl<'a, V: Version, M: MethodWithoutBody> Call<'a, SEND_HEADERS, V, M, ()> {
     // TODO: Can we find a trait bound that allows us to call this without_body()?
-    pub fn finish(mut self) -> Result<Call<'a, RECV_STATUS, V, M, BODY_NONE>> {
+    pub fn send(mut self) -> Result<Call<'a, RECV_STATUS, V, M, ()>> {
         let mut w = self.out.writer();
         write!(w, "\r\n").or(OVERFLOW)?;
         w.commit();
+
+        Ok(self.transition())
+    }
+}
+
+impl<'a, V: Version, M: MethodWithBody> Call<'a, SEND_BODY, V, M, BODY_LENGTH> {
+    #[inline(always)]
+    fn checker(&mut self) -> &mut SendByteChecker {
+        self.state
+            .send_byte_checker
+            .as_mut()
+            // If we don't have the checker when in type state SEND_BODY, we got a bug.
+            .expect("SendByteCheck when SEND_BODY")
+    }
+
+    pub fn write_bytes(&mut self, bytes: &[u8]) -> Result<()> {
+        // This returns Err if we try to write more bytes than content-length.
+        self.checker().append(bytes.len())?;
+
+        let mut w = self.out.writer();
+        w.write_bytes(bytes)?;
+        w.commit();
+
+        Ok(())
+    }
+
+    pub fn complete(mut self) -> Result<Call<'a, RECV_STATUS, V, M, ()>> {
+        // This returns Err if we have written less than content-length.
+        self.checker().assert_expected()?;
+
         Ok(self.transition())
     }
 }

@@ -54,6 +54,12 @@ pub enum HootError {
 
     /// Header is not allowed for HTTP/1.1
     ForbiddenHttp11Header,
+
+    /// Attempt to send more content than declared in the `Content-Length` header.
+    SentMoreThanContentLength,
+
+    /// Attempt to send less content than declared in the `Content-Length` header.
+    SentLessThanContentLength,
 }
 
 pub(crate) static OVERFLOW: Result<()> = Err(HootError::OutputOverflow);
@@ -105,7 +111,7 @@ mod test {
             // Finish writes the header end into the buffer and transitions the state to expect
             // response input.
             // The `.finish()` call is only available for HTTP verbs that have no body.
-            .finish()?
+            .send()?
             // Again, release the buffer to write to a transport.
             .flush();
 

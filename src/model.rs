@@ -5,7 +5,7 @@ use core::ops::Deref;
 use crate::out::Out;
 use crate::vars::private;
 
-use crate::state::*;
+use crate::{state::*, HootError};
 use private::*;
 
 pub struct CallState<S, V, M, B>
@@ -19,8 +19,44 @@ where
     _version: PhantomData<V>,
     _method: PhantomData<M>,
     _btype: PhantomData<B>,
-    pub(crate) body_type_recv: Option<BodyTypeRecv>,
+    pub(crate) send_byte_checker: Option<SendByteChecker>,
 }
+
+pub(crate) struct SendByteChecker {
+    sent: u64,
+    expected: u64,
+}
+
+impl SendByteChecker {
+    pub(crate) fn new(expected: u64) -> Self {
+        SendByteChecker { sent: 0, expected }
+    }
+
+    pub(crate) fn append(&mut self, sent: usize) -> Result<(), HootError> {
+        let new_total = self.sent + sent as u64;
+        if new_total > self.expected {
+            return Err(HootError::SentMoreThanContentLength);
+        }
+        self.sent = new_total;
+        Ok(())
+    }
+
+    pub(crate) fn assert_expected(&self) -> Result<(), HootError> {
+        if self.sent != self.expected {
+            return Err(HootError::SentLessThanContentLength);
+        }
+
+        Ok(())
+    }
+}
+
+// #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+// pub(crate) enum BodyTypeRecv {
+//     NoBody,
+//     LengthDelimited(u64),
+//     Chunked,
+//     CloseDelimited,
+// }
 
 impl CallState<(), (), (), ()> {
     fn new<S: State, V: Version, M: Method, B: BodyType>() -> CallState<S, V, M, B> {
@@ -29,7 +65,7 @@ impl CallState<(), (), (), ()> {
             _version: PhantomData,
             _method: PhantomData,
             _btype: PhantomData,
-            body_type_recv: None,
+            send_byte_checker: None,
         }
     }
 }
@@ -81,14 +117,6 @@ where
         // SAFETY: this only changes the type state of the PhantomData
         unsafe { mem::transmute(self) }
     }
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub(crate) enum BodyTypeRecv {
-    NoBody,
-    LengthDelimited(u64),
-    Chunked,
-    CloseDelimited,
 }
 
 pub struct Output<'a, S, V, M, B>
