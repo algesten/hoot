@@ -39,7 +39,15 @@ pub mod method {
     pub struct PATCH;
 }
 
+#[allow(non_camel_case_types)]
+pub mod body {
+    pub struct BODY_NONE;
+    pub struct BODY_LENGTH;
+    pub struct BODY_CHUNKED;
+}
+
 pub(crate) mod private {
+    use super::body::*;
     use super::method::*;
     use super::state::*;
     use super::version::*;
@@ -101,4 +109,10 @@ pub(crate) mod private {
     pub trait MethodConnect: MethodWithoutBody {}
     impl MethodWithoutBody for CONNECT {}
     impl MethodConnect for CONNECT {}
+
+    pub trait BodyType {}
+    impl BodyType for () {}
+    impl BodyType for BODY_NONE {}
+    impl BodyType for BODY_LENGTH {}
+    impl BodyType for BODY_CHUNKED {}
 }

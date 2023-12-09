@@ -6,6 +6,7 @@ use httparse::Header;
 use crate::{HootError, Result};
 
 /// Use a generic byte buffer to write httparse Header.
+// TODO: Are these lifetimes ok?
 pub(crate) fn cast_buf_for_headers<'a, 'b>(buf: &'a mut [u8]) -> Result<&'a mut [Header<'b>]> {
     let byte_len = buf.len();
 
@@ -30,7 +31,7 @@ pub(crate) fn cast_buf_for_headers<'a, 'b>(buf: &'a mut [u8]) -> Result<&'a mut 
     let ptr = unsafe { ptr.add(offset) };
 
     // SAFETY: We checked alignment and how many headers we can fit once aligned.
-    // MA: I'm uncertain of my use of unsafe here.
+    // TODO: I'm uncertain of my use of unsafe here.
     let header_buf = unsafe { core::slice::from_raw_parts_mut(ptr as *mut Header, len) };
 
     Ok(header_buf)

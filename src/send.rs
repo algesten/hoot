@@ -1,9 +1,10 @@
 use core::fmt::Write;
 
+use crate::body::{BODY_CHUNKED, BODY_LENGTH, BODY_NONE};
 use crate::util::cast_buf_for_headers;
 use crate::vars::private;
 use crate::Result;
-use crate::{Call, CallState, Output, OVERFLOW};
+use crate::{Call, OVERFLOW};
 
 use crate::method::*;
 use crate::state::*;
@@ -11,34 +12,19 @@ use crate::version::*;
 use httparse::parse_headers;
 use private::*;
 
-impl<'a, S, V, M> Output<'a, S, V, M>
-where
-    S: State,
-    V: Version,
-    M: Method,
-{
-    pub fn ready(self) -> CallState<S, V, M> {
-        self.state
-    }
-
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.output
-    }
-}
-
-impl<'a> Call<'a, INIT, (), ()> {
-    pub fn http_10(self) -> Call<'a, SEND_LINE, HTTP_10, ()> {
+impl<'a> Call<'a, INIT, (), (), ()> {
+    pub fn http_10(self) -> Call<'a, SEND_LINE, HTTP_10, (), ()> {
         self.transition()
     }
 
-    pub fn http_11(self) -> Call<'a, SEND_LINE, HTTP_11, ()> {
+    pub fn http_11(self) -> Call<'a, SEND_LINE, HTTP_11, (), ()> {
         self.transition()
     }
 }
 
 macro_rules! send_method {
     ($meth:ident, $meth_up:tt, $ver:ty) => {
-        pub fn $meth(mut self, path: &str) -> Result<Call<'a, SEND_HEADERS, $ver, $meth_up>> {
+        pub fn $meth(mut self, path: &str) -> Result<Call<'a, SEND_HEADERS, $ver, $meth_up, ()>> {
             self.out
                 .write_send_line(stringify!($meth_up), path, <$ver>::version_str())?;
             Ok(self.transition())
@@ -46,13 +32,13 @@ macro_rules! send_method {
     };
 }
 
-impl<'a> Call<'a, SEND_LINE, HTTP_10, ()> {
+impl<'a> Call<'a, SEND_LINE, HTTP_10, (), ()> {
     send_method!(get, GET, HTTP_10);
     send_method!(head, HEAD, HTTP_10);
     send_method!(post, POST, HTTP_10);
 }
 
-impl<'a> Call<'a, SEND_LINE, HTTP_11, ()> {
+impl<'a> Call<'a, SEND_LINE, HTTP_11, (), ()> {
     send_method!(get, GET, HTTP_11);
     send_method!(head, HEAD, HTTP_11);
     send_method!(post, POST, HTTP_11);
@@ -63,7 +49,7 @@ impl<'a> Call<'a, SEND_LINE, HTTP_11, ()> {
     send_method!(trace, TRACE, HTTP_11);
 }
 
-impl<'a, M: Method, V: Version> Call<'a, SEND_HEADERS, V, M> {
+impl<'a, M: Method, V: Version> Call<'a, SEND_HEADERS, V, M, ()> {
     pub fn header(self, name: &str, value: &str) -> Result<Self> {
         self.header_bytes(name, value.as_bytes())
     }
@@ -88,15 +74,18 @@ impl<'a, M: Method, V: Version> Call<'a, SEND_HEADERS, V, M> {
     }
 }
 
-impl<'a, M: MethodWithBody> Call<'a, SEND_HEADERS, HTTP_10, M> {
-    pub fn with_body(mut self, length: u64) -> Result<Call<'a, SEND_BODY, HTTP_10, M>> {
+impl<'a, M: MethodWithBody> Call<'a, SEND_HEADERS, HTTP_10, M, ()> {
+    pub fn with_body(
+        mut self,
+        length: u64,
+    ) -> Result<Call<'a, SEND_BODY, HTTP_10, M, BODY_LENGTH>> {
         let mut w = self.out.writer();
         write!(w, "Content-Length: {}\r\n\r\n", length).or(OVERFLOW)?;
         w.commit();
         Ok(self.transition())
     }
 
-    pub fn without_body(mut self) -> Result<Call<'a, RECV_STATUS, HTTP_10, M>> {
+    pub fn without_body(mut self) -> Result<Call<'a, RECV_STATUS, HTTP_11, M, BODY_NONE>> {
         let mut w = self.out.writer();
         write!(w, "\r\n").or(OVERFLOW)?;
         w.commit();
@@ -104,8 +93,34 @@ impl<'a, M: MethodWithBody> Call<'a, SEND_HEADERS, HTTP_10, M> {
     }
 }
 
-impl<'a, V: Version, M: MethodWithoutBody> Call<'a, SEND_HEADERS, V, M> {
-    pub fn finish(mut self) -> Result<Call<'a, RECV_STATUS, HTTP_10, M>> {
+impl<'a, M: MethodWithBody> Call<'a, SEND_HEADERS, HTTP_11, M, ()> {
+    pub fn with_body(
+        mut self,
+        length: u64,
+    ) -> Result<Call<'a, SEND_BODY, HTTP_11, M, BODY_LENGTH>> {
+        let mut w = self.out.writer();
+        write!(w, "Content-Length: {}\r\n\r\n", length).or(OVERFLOW)?;
+        w.commit();
+        Ok(self.transition())
+    }
+
+    pub fn with_body_chunked(mut self) -> Result<Call<'a, SEND_BODY, HTTP_11, M, BODY_CHUNKED>> {
+        let mut w = self.out.writer();
+        write!(w, "Transfer-Encoding: chunked\r\n\r\n").or(OVERFLOW)?;
+        w.commit();
+        Ok(self.transition())
+    }
+
+    pub fn without_body(mut self) -> Result<Call<'a, RECV_STATUS, HTTP_11, M, BODY_NONE>> {
+        let mut w = self.out.writer();
+        write!(w, "\r\n").or(OVERFLOW)?;
+        w.commit();
+        Ok(self.transition())
+    }
+}
+
+impl<'a, V: Version, M: MethodWithoutBody> Call<'a, SEND_HEADERS, V, M, ()> {
+    pub fn finish(mut self) -> Result<Call<'a, RECV_STATUS, V, M, BODY_NONE>> {
         let mut w = self.out.writer();
         write!(w, "\r\n").or(OVERFLOW)?;
         w.commit();
