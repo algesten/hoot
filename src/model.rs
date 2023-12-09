@@ -160,19 +160,48 @@ where
     }
 }
 
-#[cfg(test)]
-mod test {
-    use super::*;
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct Status<'a>(pub HttpVersion, pub u16, pub Option<&'a str>);
 
-    impl<'a, S, V, M, B> std::fmt::Debug for Call<'a, S, V, M, B>
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum HttpVersion {
+    Http10,
+    Http11,
+}
+
+#[cfg(any(std, test))]
+mod std_impls {
+    use super::*;
+    use std::fmt;
+
+    impl fmt::Debug for HttpVersion {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                Self::Http10 => write!(f, "Http10"),
+                Self::Http11 => write!(f, "Http11"),
+            }
+        }
+    }
+
+    impl<'a, S, V, M, B> fmt::Debug for Call<'a, S, V, M, B>
     where
         S: State,
         V: Version,
         M: Method,
         B: BodyType,
     {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             f.debug_struct("Call").finish()
+        }
+    }
+
+    impl fmt::Debug for Status<'_> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.debug_tuple("Status")
+                .field(&self.0)
+                .field(&self.1)
+                .field(&self.2)
+                .finish()
         }
     }
 }

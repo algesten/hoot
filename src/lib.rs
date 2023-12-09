@@ -7,13 +7,10 @@ mod out;
 mod util;
 
 mod model;
-pub use model::{Call, CallState, Output};
+pub use model::{Call, CallState, HttpVersion, Output, Status};
 
 mod vars;
 pub use vars::{body, method, state, version};
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Status<'a>(pub u16, pub Option<&'a str>);
 
 mod recv;
 pub use recv::ParseResult;
@@ -33,6 +30,9 @@ pub enum HootError {
 
     /// Invalid byte in header value.
     HeaderValue,
+
+    /// Invalid byte in Response status.
+    Status,
 
     /// Parsing headers (for sending or receiving) uses leftover space in the
     /// buffer. This error means there was not enough "spare" space to parse
@@ -143,7 +143,7 @@ mod test {
             panic!("Expected complete parse")
         };
 
-        assert_eq!(status, Status(200, Some("OK")));
+        assert_eq!(status, Status(HttpVersion::Http10, 200, Some("OK")));
         Ok(())
     }
 }

@@ -1,7 +1,9 @@
+use crate::model::{HttpVersion, Status};
 use crate::util::cast_buf_for_headers;
 use crate::vars::private;
+use crate::version::HTTP_10;
+use crate::Result;
 use crate::{Call, HootError};
-use crate::{Result, Status};
 
 use crate::state::*;
 use private::*;
@@ -34,7 +36,7 @@ impl<'a, V: Version, M: Method, B: BodyType> Call<'a, RECV_STATUS, V, M, B> {
             return Err(HootError::InvalidHttpVersion);
         }
 
-        let status = Status(code, response.reason);
+        let status = Status(HttpVersion::Http10, code, response.reason);
 
         Ok(ParseResult::Complete(self.transition(), 0, status))
     }
