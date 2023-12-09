@@ -17,6 +17,7 @@ pub struct Status<'a>(pub u16, pub Option<&'a str>);
 
 mod recv;
 pub use recv::ParseResult;
+mod parser;
 mod send;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -80,7 +81,7 @@ mod test {
     use super::*;
 
     #[test]
-    pub fn test_req() -> Result<()> {
+    pub fn test_req_get() -> Result<()> {
         let mut buf = [0; 1024];
 
         // Call::new starts a new request. The buffer can be on the stack, heap or anywe you want.

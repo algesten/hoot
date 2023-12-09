@@ -3,7 +3,7 @@ use core::fmt::Write;
 use crate::body::{BODY_CHUNKED, BODY_LENGTH};
 use crate::model::SendByteChecker;
 use crate::out::Writer;
-use crate::util::cast_buf_for_headers;
+use crate::parser::parse_headers;
 use crate::vars::private;
 use crate::{Call, OVERFLOW};
 use crate::{HootError, Result};
@@ -11,7 +11,6 @@ use crate::{HootError, Result};
 use crate::method::*;
 use crate::state::*;
 use crate::version::*;
-use httparse::parse_headers;
 use private::*;
 
 impl<'a> Call<'a, INIT, (), (), ()> {
@@ -92,10 +91,6 @@ where
         w.write_bytes(bytes)?;
         write!(w, "\r\n").or(OVERFLOW)?;
 
-        // Parse the written result to see if httparse can validate it.
-        let (written, buf) = w.split_and_borrow();
-        let headers = cast_buf_for_headers(buf)?;
-
         if trailer {
             check_headers(name, HEADERS_FORBID_TRAILER, HootError::ForbiddenTrailer)?;
         } else {
@@ -111,15 +106,15 @@ where
 
         // TODO: forbid headers that are not allowed to be repeated
 
-        if let Err(e) = parse_headers(written, headers) {
-            match e {
-                httparse::Error::HeaderName => return Err(HootError::HeaderName),
-                httparse::Error::HeaderValue => return Err(HootError::HeaderValue),
-                // If we get any other error than an indication the name or value
-                // is wrong, we've encountered a bug in hoot.
-                _ => panic!("Written header is not parseable"),
-            }
-        };
+        // Parse the written result to see if httparse can validate it.
+        let (written, buf) = w.split_and_borrow();
+
+        let headers = parse_headers(written, buf)?;
+
+        if headers.len() != 1 {
+            // If we don't manage to parse back the hedaer we just wrote, it's a bug in hoot.
+            panic!("Failed to parse one written header");
+        }
 
         // If nothing error before this, commit the result to Out.
         w.commit();

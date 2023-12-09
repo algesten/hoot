@@ -6,16 +6,16 @@ use crate::{Result, Status};
 use crate::state::*;
 use private::*;
 
-pub enum ParseResult<'a, S1: State, V: Version, M: Method, B: BodyType, S2: State, T> {
+pub enum ParseResult<'a, 'b, S1: State, V: Version, M: Method, B: BodyType, S2: State> {
     Incomplete(Call<'a, S1, V, M, B>),
-    Complete(Call<'a, S2, V, M, B>, usize, T),
+    Complete(Call<'a, S2, V, M, B>, usize, Status<'b>),
 }
 
 impl<'a, V: Version, M: Method, B: BodyType> Call<'a, RECV_STATUS, V, M, B> {
     pub fn parse_status<'b>(
         mut self,
         buf: &'b [u8],
-    ) -> Result<ParseResult<'a, RECV_STATUS, V, M, B, RECV_HEADERS, Status<'b>>> {
+    ) -> Result<ParseResult<'a, 'b, RECV_STATUS, V, M, B, RECV_HEADERS>> {
         let mut response = {
             // Borrow the remaining byte buffer temporarily for header parsing.
             let tmp = self.out.borrow_remaining();
