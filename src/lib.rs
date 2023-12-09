@@ -19,7 +19,7 @@ mod recv;
 pub use recv::ParseResult;
 mod send;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum HootError {
     OutputOverflow,
     ParseError(httparse::Error),
@@ -39,7 +39,6 @@ impl From<httparse::Error> for HootError {
 
 #[cfg(test)]
 mod test {
-
     use super::*;
 
     #[test]

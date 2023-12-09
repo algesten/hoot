@@ -87,3 +87,19 @@ where
         &self.output
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    impl<'a, S, V, M> std::fmt::Debug for Call<'a, S, V, M>
+    where
+        S: State,
+        V: Version,
+        M: Method,
+    {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("Call").finish()
+        }
+    }
+}

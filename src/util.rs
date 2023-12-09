@@ -12,8 +12,8 @@ pub(crate) fn cast_buf_for_headers<'a, 'b>(buf: &'a mut [u8]) -> Result<&'a mut 
     // The alignment of Header
     let align = align_of::<httparse::Header>();
 
-    // Treat buffer as a pointer to Header
-    let ptr = buf.as_mut_ptr() as *mut Header;
+    // Treat buffer as a pointer to some memory.
+    let ptr = buf.as_mut_ptr() as *mut u8;
 
     // The amount of offset needed to be aligned.
     let offset = ptr.align_offset(align);
@@ -31,7 +31,7 @@ pub(crate) fn cast_buf_for_headers<'a, 'b>(buf: &'a mut [u8]) -> Result<&'a mut 
 
     // SAFETY: We checked alignment and how many headers we can fit once aligned.
     // MA: I'm uncertain of my use of unsafe here.
-    let header_buf = unsafe { core::slice::from_raw_parts_mut(ptr, len) };
+    let header_buf = unsafe { core::slice::from_raw_parts_mut(ptr as *mut Header, len) };
 
     Ok(header_buf)
 }

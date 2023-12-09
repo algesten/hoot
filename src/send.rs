@@ -1,5 +1,6 @@
 use core::fmt::Write;
 
+use crate::util::cast_buf_for_headers;
 use crate::vars::private;
 use crate::Result;
 use crate::{Call, CallState, Output, OVERFLOW};
@@ -7,6 +8,7 @@ use crate::{Call, CallState, Output, OVERFLOW};
 use crate::method::*;
 use crate::state::*;
 use crate::version::*;
+use httparse::parse_headers;
 use private::*;
 
 impl<'a, S, V, M> Output<'a, S, V, M>
@@ -62,19 +64,26 @@ impl<'a> Call<'a, SEND_LINE, HTTP_11, ()> {
 }
 
 impl<'a, M: Method, V: Version> Call<'a, SEND_HEADERS, V, M> {
-    pub fn header(mut self, name: &str, value: &str) -> Result<Self> {
-        let mut w = self.out.writer();
-        write!(w, "{}: {}\r\n", name, value).or(OVERFLOW)?;
-        drop(w);
-        Ok(self)
+    pub fn header(self, name: &str, value: &str) -> Result<Self> {
+        self.header_bytes(name, value.as_bytes())
     }
 
     pub fn header_bytes(mut self, name: &str, bytes: &[u8]) -> Result<Self> {
+        // Attempt writing the header
         let mut w = self.out.writer();
         write!(w, "{}: ", name).or(OVERFLOW)?;
         w.write_bytes(bytes)?;
         write!(w, "\r\n").or(OVERFLOW)?;
-        drop(w);
+
+        // Parse the written result to see if httparse would validate it.
+        let (written, buf) = w.split_and_borrow();
+        let headers = cast_buf_for_headers(buf)?;
+
+        parse_headers(written, headers)?;
+
+        // If nothing error before this, commit the result to Out.
+        w.commit();
+
         Ok(self)
     }
 }
@@ -83,14 +92,14 @@ impl<'a, M: MethodWithBody> Call<'a, SEND_HEADERS, HTTP_10, M> {
     pub fn with_body(mut self, length: u64) -> Result<Call<'a, SEND_BODY, HTTP_10, M>> {
         let mut w = self.out.writer();
         write!(w, "Content-Length: {}\r\n\r\n", length).or(OVERFLOW)?;
-        drop(w);
+        w.commit();
         Ok(self.transition())
     }
 
     pub fn without_body(mut self) -> Result<Call<'a, RECV_STATUS, HTTP_10, M>> {
         let mut w = self.out.writer();
         write!(w, "\r\n").or(OVERFLOW)?;
-        drop(w);
+        w.commit();
         Ok(self.transition())
     }
 }
@@ -99,7 +108,43 @@ impl<'a, V: Version, M: MethodWithoutBody> Call<'a, SEND_HEADERS, V, M> {
     pub fn finish(mut self) -> Result<Call<'a, RECV_STATUS, HTTP_10, M>> {
         let mut w = self.out.writer();
         write!(w, "\r\n").or(OVERFLOW)?;
-        drop(w);
+        w.commit();
         Ok(self.transition())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::HootError;
+
+    #[test]
+    pub fn test_illegal_header_name() -> Result<()> {
+        let mut buf = [0; 1024];
+
+        let x = Call::new(&mut buf)
+            .http_11()
+            .get("/path")?
+            .header(":bad:", "fine value");
+
+        let e = x.unwrap_err();
+        assert_eq!(e, HootError::ParseError(httparse::Error::HeaderName));
+
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_illegal_header_value() -> Result<()> {
+        let mut buf = [0; 1024];
+
+        let x = Call::new(&mut buf)
+            .http_11()
+            .get("/path")?
+            .header_bytes("x-broken", b"value\0xx");
+
+        let e = x.unwrap_err();
+        assert_eq!(e, HootError::ParseError(httparse::Error::HeaderValue));
+
+        Ok(())
     }
 }
