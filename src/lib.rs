@@ -21,10 +21,36 @@ mod send;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum HootError {
+    /// The borrowed buffer did not have enough space to hold the
+    /// data we attempted to write.
+    ///
+    /// Call `.flush()`, write the output to the transport followed by `Call::resume()`.
     OutputOverflow,
-    ParseError(httparse::Error),
-    InvalidHttpVersion,
+
+    /// Invalid byte in header name.
+    HeaderName,
+
+    /// Invalid byte in header value.
+    HeaderValue,
+
+    /// Parsing headers (for sending or receiving) uses leftover space in the
+    /// buffer. This error means there was not enough "spare" space to parse
+    /// any headers.
+    ///
+    /// Call `.flush()`, write the output to the transport followed by `Call::resume()`.
     InsufficientSpaceToParseHeaders,
+
+    /// Encountered an error while parsing response.
+    ParseError(httparse::Error),
+
+    /// HTTP version in request did not match version in response.
+    InvalidHttpVersion,
+
+    /// Encountered a forbidden header name.
+    ///
+    /// `content-length` and `transfer-encoding` must be set using
+    /// `with_body()` and `with_body_chunked()`.
+    ForbiddenBodyHeader,
 }
 
 pub(crate) static OVERFLOW: Result<()> = Err(HootError::OutputOverflow);

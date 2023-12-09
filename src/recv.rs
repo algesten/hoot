@@ -39,3 +39,8 @@ impl<'a, V: Version, M: Method, B: BodyType> Call<'a, RECV_STATUS, V, M, B> {
         Ok(ParseResult::Complete(self.transition(), 0, status))
     }
 }
+
+// https://datatracker.ietf.org/doc/html/rfc2616#section-4.4
+// Messages MUST NOT include both a Content-Length header field and a
+// non-identity transfer-coding. If the message does include a non-
+// identity transfer-coding, the Content-Length MUST be ignored.

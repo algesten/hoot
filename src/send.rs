@@ -3,8 +3,8 @@ use core::fmt::Write;
 use crate::body::{BODY_CHUNKED, BODY_LENGTH, BODY_NONE};
 use crate::util::cast_buf_for_headers;
 use crate::vars::private;
-use crate::Result;
 use crate::{Call, OVERFLOW};
+use crate::{HootError, Result};
 
 use crate::method::*;
 use crate::state::*;
@@ -61,11 +61,26 @@ impl<'a, M: Method, V: Version> Call<'a, SEND_HEADERS, V, M, ()> {
         w.write_bytes(bytes)?;
         write!(w, "\r\n").or(OVERFLOW)?;
 
-        // Parse the written result to see if httparse would validate it.
+        // Parse the written result to see if httparse can validate it.
         let (written, buf) = w.split_and_borrow();
         let headers = cast_buf_for_headers(buf)?;
 
-        parse_headers(written, headers)?;
+        // These headers are forbidden because we write them with
+        check_forbidden_headers(name, HEADERS_FORBID_BODY, HootError::ForbiddenBodyHeader)?;
+
+        // TODO: forbid specific headers for 1.0/1.1
+
+        // TODO: forbid headers that are not allowed to be repeated
+
+        if let Err(e) = parse_headers(written, headers) {
+            match e {
+                httparse::Error::HeaderName => return Err(HootError::HeaderName),
+                httparse::Error::HeaderValue => return Err(HootError::HeaderValue),
+                // If we get any other error than an indication the name or value
+                // is wrong, we've encountered a bug in hoot.
+                _ => panic!("Written header is not parseable"),
+            }
+        };
 
         // If nothing error before this, commit the result to Out.
         w.commit();
@@ -104,7 +119,7 @@ impl<'a, M: MethodWithBody> Call<'a, SEND_HEADERS, HTTP_11, M, ()> {
         Ok(self.transition())
     }
 
-    pub fn with_body_chunked(mut self) -> Result<Call<'a, SEND_BODY, HTTP_11, M, BODY_CHUNKED>> {
+    pub fn with_chunked(mut self) -> Result<Call<'a, SEND_BODY, HTTP_11, M, BODY_CHUNKED>> {
         let mut w = self.out.writer();
         write!(w, "Transfer-Encoding: chunked\r\n\r\n").or(OVERFLOW)?;
         w.commit();
@@ -120,6 +135,7 @@ impl<'a, M: MethodWithBody> Call<'a, SEND_HEADERS, HTTP_11, M, ()> {
 }
 
 impl<'a, V: Version, M: MethodWithoutBody> Call<'a, SEND_HEADERS, V, M, ()> {
+    // TODO: Can we find a trait bound that allows us to call this without_body()?
     pub fn finish(mut self) -> Result<Call<'a, RECV_STATUS, V, M, BODY_NONE>> {
         let mut w = self.out.writer();
         write!(w, "\r\n").or(OVERFLOW)?;
@@ -143,7 +159,7 @@ mod test {
             .header(":bad:", "fine value");
 
         let e = x.unwrap_err();
-        assert_eq!(e, HootError::ParseError(httparse::Error::HeaderName));
+        assert_eq!(e, HootError::HeaderName);
 
         Ok(())
     }
@@ -158,8 +174,42 @@ mod test {
             .header_bytes("x-broken", b"value\0xx");
 
         let e = x.unwrap_err();
-        assert_eq!(e, HootError::ParseError(httparse::Error::HeaderValue));
+        assert_eq!(e, HootError::HeaderValue);
 
         Ok(())
     }
+}
+
+// Headers that are not allowed because we set them as part of making a call.
+const HEADERS_FORBID_BODY: &[&str] = &[
+    // header set by with_body()
+    "content-length",
+    // header set by with_chunked()
+    "transfer-encoding",
+];
+
+fn check_forbidden_headers(name: &str, forbidden: &[&str], err: HootError) -> Result<()> {
+    for c in forbidden {
+        // Length diffing, then not equal.
+        if name.len() != c.len() {
+            continue;
+        }
+
+        for (a, b) in name.chars().zip(c.chars()) {
+            if !a.is_ascii_alphabetic() {
+                // a is not even ascii, then not equal.
+                continue;
+            }
+            let norm = a.to_ascii_lowercase();
+            if norm != b {
+                // after normalizing a, not matching b, then not equal.
+                continue;
+            }
+        }
+
+        // name matched c. This is a forbidden header.
+        return Err(err);
+    }
+
+    Ok(())
 }
