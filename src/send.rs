@@ -1,6 +1,6 @@
 use core::fmt::Write;
 
-use crate::state_vars::private;
+use crate::vars::private;
 use crate::Result;
 use crate::{Call, CallState, Output, OVERFLOW};
 
@@ -63,33 +63,43 @@ impl<'a> Call<'a, SEND_LINE, HTTP_11, ()> {
 
 impl<'a, M: Method, V: Version> Call<'a, SEND_HEADERS, V, M> {
     pub fn header(mut self, name: &str, value: &str) -> Result<Self> {
-        write!(&mut self.out, "{}: {}\r\n", name, value).or(OVERFLOW)?;
+        let mut w = self.out.writer();
+        write!(w, "{}: {}\r\n", name, value).or(OVERFLOW)?;
+        drop(w);
         Ok(self)
     }
 
     pub fn header_bytes(mut self, name: &str, bytes: &[u8]) -> Result<Self> {
-        write!(&mut self.out, "{}: ", name).or(OVERFLOW)?;
-        self.out.write(bytes)?;
-        write!(&mut self.out, "\r\n").or(OVERFLOW)?;
+        let mut w = self.out.writer();
+        write!(w, "{}: ", name).or(OVERFLOW)?;
+        w.write_bytes(bytes)?;
+        write!(w, "\r\n").or(OVERFLOW)?;
+        drop(w);
         Ok(self)
     }
 }
 
 impl<'a, M: MethodWithBody> Call<'a, SEND_HEADERS, HTTP_10, M> {
     pub fn with_body(mut self, length: u64) -> Result<Call<'a, SEND_BODY, HTTP_10, M>> {
-        write!(&mut self.out, "Content-Length: {}\r\n\r\n", length).or(OVERFLOW)?;
+        let mut w = self.out.writer();
+        write!(w, "Content-Length: {}\r\n\r\n", length).or(OVERFLOW)?;
+        drop(w);
         Ok(self.transition())
     }
 
     pub fn without_body(mut self) -> Result<Call<'a, RECV_STATUS, HTTP_10, M>> {
-        write!(&mut self.out, "\r\n").or(OVERFLOW)?;
+        let mut w = self.out.writer();
+        write!(w, "\r\n").or(OVERFLOW)?;
+        drop(w);
         Ok(self.transition())
     }
 }
 
 impl<'a, V: Version, M: MethodWithoutBody> Call<'a, SEND_HEADERS, V, M> {
     pub fn finish(mut self) -> Result<Call<'a, RECV_STATUS, HTTP_10, M>> {
-        write!(&mut self.out, "\r\n").or(OVERFLOW)?;
+        let mut w = self.out.writer();
+        write!(w, "\r\n").or(OVERFLOW)?;
+        drop(w);
         Ok(self.transition())
     }
 }

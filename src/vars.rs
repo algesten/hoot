@@ -98,6 +98,7 @@ pub(crate) mod private {
     impl MethodWithoutBody for HEAD {}
     impl MethodWithoutBody for TRACE {}
 
-    pub trait MethodConnect: Method {}
+    pub trait MethodConnect: MethodWithoutBody {}
+    impl MethodWithoutBody for CONNECT {}
     impl MethodConnect for CONNECT {}
 }

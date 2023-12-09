@@ -9,8 +9,8 @@ mod util;
 mod model;
 pub use model::{Call, CallState, Output};
 
-mod state_vars;
-pub use state_vars::{method, state, version};
+mod vars;
+pub use vars::{method, state, version};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Status<'a>(pub u16, pub Option<&'a str>);

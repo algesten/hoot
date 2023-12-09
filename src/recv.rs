@@ -1,5 +1,5 @@
-use crate::state_vars::private;
 use crate::util::cast_buf_for_headers;
+use crate::vars::private;
 use crate::{Call, HootError};
 use crate::{Result, Status};
 

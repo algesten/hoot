@@ -3,7 +3,7 @@ use core::mem;
 use core::ops::Deref;
 
 use crate::out::Out;
-use crate::state_vars::private;
+use crate::vars::private;
 
 use crate::state::*;
 use private::*;
