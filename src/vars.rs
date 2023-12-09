@@ -12,18 +12,6 @@ pub mod state {
 pub mod version {
     pub struct HTTP_10;
     pub struct HTTP_11;
-
-    impl HTTP_10 {
-        pub(crate) const fn version_str() -> &'static str {
-            "1.0"
-        }
-    }
-
-    impl HTTP_11 {
-        pub(crate) const fn version_str() -> &'static str {
-            "1.1"
-        }
-    }
 }
 
 #[allow(non_camel_case_types)]

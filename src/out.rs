@@ -1,6 +1,6 @@
-use core::fmt::{self, Write};
+use core::fmt;
 
-use crate::{HootError, Result, OVERFLOW};
+use crate::{HootError, Result};
 
 pub(crate) struct Out<'a> {
     buf: &'a mut [u8],
@@ -40,13 +40,6 @@ impl<'a> Out<'a> {
 
     pub fn flush(self) -> &'a [u8] {
         &self.buf[..self.pos]
-    }
-
-    pub fn write_send_line(&mut self, method: &str, path: &str, version: &str) -> Result<()> {
-        let mut w = self.writer();
-        write!(w, "{} {} HTTP/{}\r\n", method, path, version).or(OVERFLOW)?;
-        w.commit();
-        Ok(())
     }
 }
 
@@ -117,6 +110,7 @@ impl<'b, 'a> fmt::Write for Writer<'b, 'a> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use core::fmt::Write;
 
     #[test]
     pub fn write_and_commit() {

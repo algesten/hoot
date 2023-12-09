@@ -1,6 +1,7 @@
 use core::fmt::Write;
 
 use crate::body::{BODY_CHUNKED, BODY_LENGTH, BODY_NONE};
+use crate::out::Writer;
 use crate::util::cast_buf_for_headers;
 use crate::vars::private;
 use crate::{Call, OVERFLOW};
@@ -22,31 +23,58 @@ impl<'a> Call<'a, INIT, (), (), ()> {
     }
 }
 
-macro_rules! send_method {
-    ($meth:ident, $meth_up:tt, $ver:ty) => {
-        pub fn $meth(mut self, path: &str) -> Result<Call<'a, SEND_HEADERS, $ver, $meth_up, ()>> {
-            self.out
-                .write_send_line(stringify!($meth_up), path, <$ver>::version_str())?;
+macro_rules! write_line_10 {
+    ($meth:ident, $meth_up:tt) => {
+        pub fn $meth(
+            mut self,
+            path: &str,
+        ) -> Result<Call<'a, SEND_HEADERS, HTTP_10, $meth_up, ()>> {
+            write_line_10(self.out.writer(), stringify!($meth_up), path)?;
             Ok(self.transition())
         }
     };
 }
 
+fn write_line_10(mut w: Writer<'_, '_>, method: &str, path: &str) -> Result<()> {
+    write!(w, "{} {} HTTP/1.0\r\n", method, path).or(OVERFLOW)?;
+    w.commit();
+    Ok(())
+}
+
+macro_rules! write_line_11 {
+    ($meth:ident, $meth_up:tt) => {
+        pub fn $meth(
+            mut self,
+            host: &str,
+            path: &str,
+        ) -> Result<Call<'a, SEND_HEADERS, HTTP_11, $meth_up, ()>> {
+            write_line_11(self.out.writer(), stringify!($meth_up), host, path)?;
+            Ok(self.transition())
+        }
+    };
+}
+
+fn write_line_11(mut w: Writer<'_, '_>, method: &str, host: &str, path: &str) -> Result<()> {
+    write!(w, "{} {} HTTP/1.1\r\nHost: {}\r\n", method, path, host).or(OVERFLOW)?;
+    w.commit();
+    Ok(())
+}
+
 impl<'a> Call<'a, SEND_LINE, HTTP_10, (), ()> {
-    send_method!(get, GET, HTTP_10);
-    send_method!(head, HEAD, HTTP_10);
-    send_method!(post, POST, HTTP_10);
+    write_line_10!(get, GET);
+    write_line_10!(head, HEAD);
+    write_line_10!(post, POST);
 }
 
 impl<'a> Call<'a, SEND_LINE, HTTP_11, (), ()> {
-    send_method!(get, GET, HTTP_11);
-    send_method!(head, HEAD, HTTP_11);
-    send_method!(post, POST, HTTP_11);
-    send_method!(put, PUT, HTTP_11);
-    send_method!(delete, DELETE, HTTP_11);
+    write_line_11!(get, GET);
+    write_line_11!(head, HEAD);
+    write_line_11!(post, POST);
+    write_line_11!(put, PUT);
+    write_line_11!(delete, DELETE);
     // CONNECT
-    send_method!(options, OPTIONS, HTTP_11);
-    send_method!(trace, TRACE, HTTP_11);
+    write_line_11!(options, OPTIONS);
+    write_line_11!(trace, TRACE);
 }
 
 impl<'a, M: Method, V: Version> Call<'a, SEND_HEADERS, V, M, ()> {
@@ -69,7 +97,6 @@ impl<'a, M: Method, V: Version> Call<'a, SEND_HEADERS, V, M, ()> {
         check_forbidden_headers(name, HEADERS_FORBID_BODY, HootError::ForbiddenBodyHeader)?;
 
         // TODO: forbid specific headers for 1.0/1.1
-
         // TODO: forbid headers that are not allowed to be repeated
 
         if let Err(e) = parse_headers(written, headers) {
@@ -155,7 +182,7 @@ mod test {
 
         let x = Call::new(&mut buf)
             .http_11()
-            .get("/path")?
+            .get("myhost.test:8080", "/path")?
             .header(":bad:", "fine value");
 
         let e = x.unwrap_err();
@@ -170,7 +197,7 @@ mod test {
 
         let x = Call::new(&mut buf)
             .http_11()
-            .get("/path")?
+            .get("myhost.test:8080", "/path")?
             .header_bytes("x-broken", b"value\0xx");
 
         let e = x.unwrap_err();
