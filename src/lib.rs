@@ -7,7 +7,6 @@ mod out;
 mod util;
 
 mod vars;
-pub use vars::{body, method, state, version};
 
 mod parser;
 
@@ -118,7 +117,9 @@ mod test {
 
         // Status line information.
         let status = attempt.status().unwrap();
-        assert_eq!(status, &Status(HttpVersion::Http11, 200, "OK"));
+        assert_eq!(status.version(), HttpVersion::Http11);
+        assert_eq!(status.code(), 200);
+        assert_eq!(status.text(), "OK");
 
         // Headers
         let headers = attempt.headers().unwrap();

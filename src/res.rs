@@ -8,7 +8,8 @@ use crate::parser::find_crlf;
 use crate::req::CallState;
 use crate::util::{cast_buf_for_headers, compare_lowercase_ascii, LengthChecker};
 use crate::vars::private::*;
-use crate::{state::*, HootError, HttpVersion};
+use crate::vars::state::*;
+use crate::{HootError, HttpVersion};
 use crate::{Result, ResumeToken};
 
 pub struct Response<S: State> {
@@ -17,7 +18,7 @@ pub struct Response<S: State> {
 }
 
 impl Response<()> {
-    pub fn resume(request: ResumeToken<ENDED, (), (), ()>) -> Response<RECV_RESPONSE> {
+    pub(crate) fn resume(request: ResumeToken<ENDED, (), (), ()>) -> Response<RECV_RESPONSE> {
         Response {
             _typ: PhantomData,
             state: request.into_state(),
@@ -53,7 +54,21 @@ pub struct ResponseAttempt<'a, 'b> {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub struct Status<'a>(pub HttpVersion, pub u16, pub &'a str);
+pub struct Status<'a>(HttpVersion, u16, &'a str);
+
+impl Status<'_> {
+    pub fn version(&self) -> HttpVersion {
+        self.0
+    }
+
+    pub fn code(&self) -> u16 {
+        self.1
+    }
+
+    pub fn text(&self) -> &str {
+        self.2
+    }
+}
 
 impl<'a, 'b> ResponseAttempt<'a, 'b> {
     fn incomplete(response: Response<RECV_RESPONSE>) -> Self {
