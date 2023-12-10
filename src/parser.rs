@@ -11,7 +11,7 @@ pub fn parse_response_line(src: &[u8]) -> Result<ParseResult<Status>> {
 
     const EMPTY_STATUS: Status = Status(HttpVersion::Http11, 0, "");
     const EMPTY_PARSE: ParseResult<Status> = ParseResult {
-        complete: false,
+        success: false,
         consumed: 0,
         output: EMPTY_STATUS,
     };
@@ -52,14 +52,14 @@ pub fn parse_response_line(src: &[u8]) -> Result<ParseResult<Status>> {
     let text = str::from_utf8(text)?;
 
     Ok(ParseResult {
-        complete: true,
+        success: true,
         consumed,
         output: Status(version, status, text),
     })
 }
 
 pub(crate) struct ParseResult<T> {
-    pub complete: bool,
+    pub success: bool,
     pub consumed: usize,
     pub output: T,
 }
@@ -88,7 +88,7 @@ pub(crate) fn parse_headers<'a, 'b>(
     // Err case handled above.
     let result = result.unwrap();
 
-    let (complete, consumed) = match result {
+    let (success, consumed) = match result {
         httparse::Status::Complete((consumed, _)) => (true, consumed),
         httparse::Status::Partial => (false, 0),
     };
@@ -100,7 +100,7 @@ pub(crate) fn parse_headers<'a, 'b>(
     let output = &hbuf[..count];
 
     Ok(ParseResult {
-        complete,
+        success,
         consumed,
         output,
     })
@@ -192,7 +192,7 @@ mod test {
         assert_eq!(result.consumed, 0);
         assert_eq!(result.output[0].name, "Host");
         assert_eq!(result.output[0].value, b"foo.com");
-        assert!(!result.complete);
+        assert!(!result.success);
     }
 
     #[test]
@@ -206,7 +206,7 @@ mod test {
         assert_eq!(result.consumed, 33);
         assert_eq!(result.output[1].name, "X-fine");
         assert_eq!(result.output[1].value, b"foo");
-        assert!(result.complete);
+        assert!(result.success);
     }
 
     #[test]
@@ -220,17 +220,17 @@ mod test {
     #[test]
     fn test_parse_response_line() {
         let r = parse_response_line(b"HTTP/1.0 200\r").unwrap();
-        assert_eq!(r.complete, false);
+        assert_eq!(r.success, false);
         assert_eq!(r.consumed, 0);
         assert_eq!(r.output, Status(HttpVersion::Http11, 0, ""));
 
         let r = parse_response_line(b"HTTP/1.0 200\r\n").unwrap();
-        assert_eq!(r.complete, true);
+        assert_eq!(r.success, true);
         assert_eq!(r.consumed, 14);
         assert_eq!(r.output, Status(HttpVersion::Http10, 200, ""));
 
         let r = parse_response_line(b"HTTP/1.1 418 I'm a teapot\r\n").unwrap();
-        assert_eq!(r.complete, true);
+        assert_eq!(r.success, true);
         assert_eq!(r.consumed, 27);
         assert_eq!(r.output, Status(HttpVersion::Http11, 418, "I'm a teapot"));
     }

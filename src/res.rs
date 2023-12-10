@@ -126,21 +126,27 @@ impl Response<RECV_RESPONSE> {
         buf: &'b mut [u8],
     ) -> Result<ResponseAttempt<'a, 'b>> {
         let line = parse_response_line(input)?;
-        if !line.complete {
+        if !line.success {
             return Ok(ResponseAttempt::incomplete(self));
+        }
+
+        // Unwrap is ok because we must have set the version earlier in request.
+        let request_version = self.state.version.unwrap();
+
+        if request_version != line.output.0 {
+            return Err(HootError::HttpVersionMismatch);
         }
 
         let status_offset = line.consumed;
 
         let headers = parse_headers(&input[status_offset..], buf)?;
-
-        if !headers.complete {
+        if !headers.success {
             return Ok(ResponseAttempt::incomplete(self));
         }
 
         // Derive body mode from knowledge this far.
-        let is_http10 = self.state.is_head.unwrap();
-        let is_head = self.state.is_head.unwrap();
+        let is_http10 = request_version == HttpVersion::Http10;
+        let is_head = self.state.is_head.unwrap(); // Ok for same reason as above.
         let mode = RecvBodyMode::from(is_http10, is_head, line.output.1, headers.output)?;
 
         // If we are awaiting a length, put a length checker in place
