@@ -99,3 +99,18 @@ impl LengthChecker {
         self.handled == self.expected
     }
 }
+
+#[cfg(any(std, test))]
+mod std_impls {
+    use super::*;
+    use std::fmt;
+
+    impl fmt::Debug for LengthChecker {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.debug_struct("LengthChecker")
+                .field("handled", &self.handled)
+                .field("expected", &self.expected)
+                .finish()
+        }
+    }
+}

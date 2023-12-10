@@ -437,7 +437,19 @@ mod std_impls {
 
     impl<'a, S: State, V: Version, M: Method, B: BodyType> fmt::Debug for Request<'a, S, V, M, B> {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            f.debug_struct("Call").finish()
+            f.debug_struct("Request").finish()
+        }
+    }
+
+    impl fmt::Debug for CallState {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.debug_struct("CallState")
+                .field("is_head", &self.is_head)
+                .field("send_checker", &self.send_checker)
+                .field("recv_body_mode", &self.recv_body_mode)
+                .field("recv_checker", &self.recv_checker)
+                .field("body_complete", &self.body_complete)
+                .finish()
         }
     }
 }

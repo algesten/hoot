@@ -352,4 +352,16 @@ mod std_impls {
                 .finish()
         }
     }
+
+    impl fmt::Debug for RecvBodyMode {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                Self::LengthDelimited(arg0) => {
+                    f.debug_tuple("LengthDelimited").field(arg0).finish()
+                }
+                Self::Chunked => write!(f, "Chunked"),
+                Self::CloseDelimited => write!(f, "CloseDelimited"),
+            }
+        }
+    }
 }
