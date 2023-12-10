@@ -27,10 +27,6 @@ impl<'a> Out<'a> {
         Ok(len)
     }
 
-    pub fn borrow_remaining(&mut self) -> &mut [u8] {
-        &mut self.buf[self.pos..]
-    }
-
     pub fn writer<'b>(&'b mut self) -> Writer<'b, 'a> {
         Writer {
             out: self,

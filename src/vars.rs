@@ -5,8 +5,7 @@ pub mod state {
     pub struct SEND_HEADERS;
     pub struct SEND_BODY;
     pub struct SEND_TRAILER;
-    pub struct RECV_STATUS;
-    pub struct RECV_HEADERS;
+    pub struct RECV_RESPONSE;
     pub struct RECV_BODY;
     pub struct RECV_TRAILERS;
     pub struct ENDED;
@@ -61,8 +60,7 @@ pub(crate) mod private {
     impl State for SEND_HEADERS {}
     impl State for SEND_BODY {}
     impl State for SEND_TRAILER {}
-    impl State for RECV_STATUS {}
-    impl State for RECV_HEADERS {}
+    impl State for RECV_RESPONSE {}
     impl State for RECV_BODY {}
     impl State for RECV_TRAILERS {}
     impl State for ENDED {}
