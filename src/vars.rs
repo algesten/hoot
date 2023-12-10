@@ -8,6 +8,8 @@ pub mod state {
     pub struct RECV_STATUS;
     pub struct RECV_HEADERS;
     pub struct RECV_BODY;
+    pub struct RECV_TRAILERS;
+    pub struct ENDED;
 }
 
 #[allow(non_camel_case_types)]
@@ -62,6 +64,8 @@ pub(crate) mod private {
     impl State for RECV_STATUS {}
     impl State for RECV_HEADERS {}
     impl State for RECV_BODY {}
+    impl State for RECV_TRAILERS {}
+    impl State for ENDED {}
 
     impl Version for () {
         fn version() -> HttpVersion {

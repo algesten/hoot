@@ -1,4 +1,3 @@
-use crate::method::HEAD;
 use crate::model::{RecvBodyMode, Status};
 use crate::parser::{parse_headers, parse_response_line, ParseResult};
 use crate::vars::private;
@@ -118,7 +117,7 @@ impl<'a, 'b: 'a, V: Version, M: Method>
         // Starting state.
         Call<'a, RECV_HEADERS, V, M, ()>,
         // Transitioned state.
-        Call<'a, RECV_BODY, (), M, ()>,
+        MaybeBody<'a>,
     > for AttemptHeaders<'a, 'b, V, M>
 {
     type Output = [Header<'b>];
@@ -140,15 +139,28 @@ impl<'a, 'b: 'a, V: Version, M: Method>
         Some(output)
     }
 
-    fn proceed(
-        self,
-    ) -> MaybeNext<Call<'a, RECV_HEADERS, V, M, ()>, Call<'a, RECV_BODY, (), M, ()>> {
+    fn proceed(self) -> MaybeNext<Call<'a, RECV_HEADERS, V, M, ()>, MaybeBody<'a>> {
         if self.success {
-            MaybeNext::Next(self.call.transition())
+            let recv_body_mode = self.call.state.recv_body_mode.expect("body mode to be set");
+
+            let maybe_body = match recv_body_mode {
+                // We do not expect a body after the headers
+                RecvBodyMode::LengthDelimited(len) if len == 0 => {
+                    MaybeBody::NoBody(self.call.transition())
+                }
+                // There will be some body.
+                _ => MaybeBody::HasBody(self.call.transition()),
+            };
+            MaybeNext::Next(maybe_body)
         } else {
             MaybeNext::Stay(self.call)
         }
     }
+}
+
+pub enum MaybeBody<'a> {
+    HasBody(Call<'a, RECV_BODY, (), (), ()>),
+    NoBody(Call<'a, ENDED, (), (), ()>),
 }
 
 impl<'a, V: Version, M: Method> Call<'a, RECV_HEADERS, V, M, ()> {
@@ -184,6 +196,6 @@ impl<'a, V: Version, M: Method> Call<'a, RECV_HEADERS, V, M, ()> {
     }
 }
 
-impl<'a, M: Method> Call<'a, RECV_BODY, (), M, ()> {
+impl<'a> Call<'a, RECV_BODY, (), (), ()> {
     //
 }

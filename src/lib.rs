@@ -14,7 +14,7 @@ mod vars;
 pub use vars::{body, method, state, version};
 
 mod recv;
-pub use recv::{Attempt, AttemptHeaders, AttemptStatus};
+pub use recv::{Attempt, AttemptHeaders, AttemptStatus, MaybeBody, MaybeNext};
 mod parser;
 mod send;
 

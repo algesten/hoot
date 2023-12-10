@@ -194,11 +194,23 @@ impl RecvBodyMode {
         status_code: u16,
         headers: &[Header<'_>],
     ) -> Result<Self> {
-        let has_no_body = is_head || matches!(status_code, 204 | 304);
+        let has_no_body =
+            // https://datatracker.ietf.org/doc/html/rfc2616#section-4.3
+            // All responses to the HEAD request method
+            // MUST NOT include a message-body, even though the presence of entity-
+            // header fields might lead one to believe they do.
+            is_head ||
+            // All 1xx (informational), 204 (no content), and 304 (not modified) responses
+            // MUST NOT include a message-body.
+            status_code >= 100 && status_code <= 199 ||
+            matches!(status_code, 204 | 304);
 
         if has_no_body {
             return Ok(Self::LengthDelimited(0));
         }
+
+        // https://datatracker.ietf.org/doc/html/rfc2616#section-4.3
+        // All other responses do include a message-body, although it MAY be of zero length.
 
         let mut content_length: Option<u64> = None;
         let mut is_chunked = false;
