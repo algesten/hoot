@@ -1,46 +1,98 @@
-use crate::model::{HttpVersion, Status};
-use crate::util::cast_buf_for_headers;
+use crate::model::Status;
+use crate::parser::{parse_response_line, ParseResult};
 use crate::vars::private;
-use crate::version::HTTP_10;
 use crate::Result;
 use crate::{Call, HootError};
 
 use crate::state::*;
 use private::*;
 
-pub enum ParseResult<'a, 'b, S1: State, V: Version, M: Method, B: BodyType, S2: State> {
-    Incomplete(Call<'a, S1, V, M, B>),
-    Complete(Call<'a, S2, V, M, B>, usize, Status<'b>),
+pub enum Attempt<C1, C2, T> {
+    Failure {
+        call: C1,
+    },
+    Success {
+        call: C2,
+        consumed: usize,
+        output: T,
+    },
 }
 
-impl<'a, V: Version, M: Method, B: BodyType> Call<'a, RECV_STATUS, V, M, B> {
-    pub fn parse_status<'b>(
-        mut self,
-        buf: &'b [u8],
-    ) -> Result<ParseResult<'a, 'b, RECV_STATUS, V, M, B, RECV_HEADERS>> {
-        let mut response = {
-            // Borrow the remaining byte buffer temporarily for header parsing.
-            let tmp = self.out.borrow_remaining();
-            let headers = cast_buf_for_headers(tmp)?;
-            httparse::Response::new(headers)
+impl<C1, C2, T> Attempt<C1, C2, T> {
+    pub fn is_failure(&self) -> bool {
+        matches!(self, Attempt::Failure { .. })
+    }
+
+    pub fn is_success(&self) -> bool {
+        matches!(self, Attempt::Success { .. })
+    }
+
+    pub fn consumed(&self) -> usize {
+        let Self::Success { consumed, .. } = self else {
+            return 0;
         };
+        *consumed
+    }
 
-        response.parse(buf)?;
-
-        // HTTP/1.0 200 OK
-        let (Some(version), Some(code)) = (response.version, response.code) else {
-            return Ok(ParseResult::Incomplete(self));
+    pub fn output(&self) -> Option<&T> {
+        let Self::Success { output, .. } = self else {
+            return None;
         };
+        Some(output)
+    }
 
-        if version != V::httparse_version() {
-            return Err(HootError::InvalidHttpVersion);
-        }
+    pub fn revert(self) -> Option<C1> {
+        let Self::Failure { call } = self else {
+            return None;
+        };
+        Some(call)
+    }
 
-        let status = Status(HttpVersion::Http10, code, response.reason);
-
-        Ok(ParseResult::Complete(self.transition(), 0, status))
+    pub fn complete(self) -> Option<C2> {
+        let Self::Success { call, .. } = self else {
+            return None;
+        };
+        Some(call)
     }
 }
+
+type ParseStatus<'a, V, M> = Attempt<
+    // Incoming state if Incomplete parse.
+    Call<'a, RECV_STATUS, V, M, ()>,
+    // Outgoing state if complete parse.
+    Call<'a, RECV_HEADERS, (), M, ()>,
+    // The parsed data
+    Status<'a>,
+>;
+
+impl<'a, V: Version, M: Method> Call<'a, RECV_STATUS, V, M, ()> {
+    pub fn try_read_status<'b: 'a>(self, buf: &'b [u8]) -> Result<ParseStatus<'a, V, M>> {
+        let ParseResult {
+            complete,
+            consumed,
+            output,
+        } = parse_response_line(buf)?;
+
+        let result = if complete {
+            // Check server responded as we expect
+            if output.0 != V::version() {
+                return Err(HootError::HttpVersionMismatch);
+            }
+
+            Attempt::Success {
+                call: self.transition(),
+                consumed,
+                output,
+            }
+        } else {
+            Attempt::Failure { call: self }
+        };
+
+        Ok(result)
+    }
+}
+
+impl<'a, M: Method> Call<'a, RECV_HEADERS, (), M, ()> {}
 
 // https://datatracker.ietf.org/doc/html/rfc2616#section-4.4
 // Messages MUST NOT include both a Content-Length header field and a

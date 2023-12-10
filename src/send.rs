@@ -5,7 +5,7 @@ use crate::model::SendByteChecker;
 use crate::out::Writer;
 use crate::parser::parse_headers;
 use crate::vars::private;
-use crate::{Call, OVERFLOW};
+use crate::{Call, HttpVersion, OVERFLOW};
 use crate::{HootError, Result};
 
 use crate::method::*;
@@ -97,10 +97,13 @@ where
             // These headers are forbidden because we write them with
             check_headers(name, HEADERS_FORBID_BODY, HootError::ForbiddenBodyHeader)?;
 
-            match V::httparse_version() {
-                // TODO: forbid specific headers for 1.0
-                1 => check_headers(name, HEADERS_FORBID_11, HootError::ForbiddenHttp11Header)?,
-                _ => {}
+            match V::version() {
+                HttpVersion::Http10 => {
+                    // TODO: forbid specific headers for 1.0
+                }
+                HttpVersion::Http11 => {
+                    check_headers(name, HEADERS_FORBID_11, HootError::ForbiddenHttp11Header)?
+                }
             }
         }
 
@@ -109,9 +112,9 @@ where
         // Parse the written result to see if httparse can validate it.
         let (written, buf) = w.split_and_borrow();
 
-        let headers = parse_headers(written, buf)?;
+        let result = parse_headers(written, buf)?;
 
-        if headers.len() != 1 {
+        if result.output.len() != 1 {
             // If we don't manage to parse back the hedaer we just wrote, it's a bug in hoot.
             panic!("Failed to parse one written header");
         }

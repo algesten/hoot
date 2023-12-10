@@ -161,7 +161,7 @@ where
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub struct Status<'a>(pub HttpVersion, pub u16, pub Option<&'a str>);
+pub struct Status<'a>(pub HttpVersion, pub u16, pub &'a str);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum HttpVersion {

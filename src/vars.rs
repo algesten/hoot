@@ -35,6 +35,8 @@ pub mod body {
 }
 
 pub(crate) mod private {
+    use crate::HttpVersion;
+
     use super::body::*;
     use super::method::*;
     use super::state::*;
@@ -42,7 +44,7 @@ pub(crate) mod private {
 
     pub trait State {}
     pub trait Version {
-        fn httparse_version() -> u8;
+        fn version() -> HttpVersion;
     }
     pub trait Method {}
 
@@ -56,18 +58,19 @@ pub(crate) mod private {
     impl State for RECV_HEADERS {}
 
     impl Version for () {
-        fn httparse_version() -> u8 {
+        fn version() -> HttpVersion {
+            // Calling .version() on a () is a bug.
             unreachable!()
         }
     }
     impl Version for HTTP_10 {
-        fn httparse_version() -> u8 {
-            0
+        fn version() -> HttpVersion {
+            HttpVersion::Http10
         }
     }
     impl Version for HTTP_11 {
-        fn httparse_version() -> u8 {
-            1
+        fn version() -> HttpVersion {
+            HttpVersion::Http11
         }
     }
 
