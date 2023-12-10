@@ -5,7 +5,7 @@ use core::ops::Deref;
 use crate::out::Out;
 use crate::vars::private;
 
-use crate::{state::*, HootError};
+use crate::{state::*, HootError, Result};
 use private::*;
 
 pub struct CallState<S, V, M, B>
@@ -32,7 +32,7 @@ impl SendByteChecker {
         SendByteChecker { sent: 0, expected }
     }
 
-    pub(crate) fn append(&mut self, sent: usize) -> Result<(), HootError> {
+    pub(crate) fn append(&mut self, sent: usize) -> Result<()> {
         let new_total = self.sent + sent as u64;
         if new_total > self.expected {
             return Err(HootError::SentMoreThanContentLength);
@@ -41,7 +41,7 @@ impl SendByteChecker {
         Ok(())
     }
 
-    pub(crate) fn assert_expected(&self) -> Result<(), HootError> {
+    pub(crate) fn assert_expected(&self) -> Result<()> {
         if self.sent != self.expected {
             return Err(HootError::SentLessThanContentLength);
         }

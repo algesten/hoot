@@ -1,11 +1,12 @@
 use core::fmt::Write;
 
 use crate::body::{BODY_CHUNKED, BODY_LENGTH};
+use crate::error::OVERFLOW;
 use crate::model::SendByteChecker;
 use crate::out::Writer;
 use crate::parser::parse_headers;
 use crate::vars::private;
-use crate::{Call, HttpVersion, OVERFLOW};
+use crate::{Call, HttpVersion};
 use crate::{HootError, Result};
 
 use crate::method::*;
