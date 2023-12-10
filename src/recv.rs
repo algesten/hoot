@@ -12,7 +12,7 @@ pub trait Attempt<C1, C2> {
     type Output: ?Sized;
     fn is_success(&self) -> bool;
     fn consumed(&self) -> usize;
-    fn output(&mut self) -> Option<&Self::Output>;
+    fn output(&self) -> Option<&Self::Output>;
     fn proceed(self) -> MaybeNext<C1, C2>;
 }
 
@@ -62,7 +62,7 @@ impl<'a, 'b: 'a, V: Version, M: Method>
         self.consumed
     }
 
-    fn output(&mut self) -> Option<&Self::Output> {
+    fn output(&self) -> Option<&Self::Output> {
         self.success.then_some(&self.output)
     }
 
@@ -127,9 +127,10 @@ impl<'a, 'b: 'a, M: Method>
         self.consumed
     }
 
-    fn output(&mut self) -> Option<&Self::Output> {
-        // SAFETY: The header_ptr points into the buffer captured by lifetime 'b. As long as
-        // lifetime 'b is valid, the pointer is valid.
+    fn output(&self) -> Option<&Self::Output> {
+        // SAFETY: The header_ptr points to array inside Call.Out buffer with lifetime 'a and each
+        // Header points to input captured by lifetime 'b. AttemptHeaders does not have any mutations,
+        // whicn means the pointers are correct as long as this struct is alive.
         let output = unsafe { core::slice::from_raw_parts(self.output_ptr, self.output_len) };
 
         Some(output)

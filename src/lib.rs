@@ -92,7 +92,7 @@ mod test {
         let call = attempt.proceed().unwrap_stay();
 
         // Try read complete input
-        let mut attempt = call.try_read_status(b"HTTP/1.1 200 OK\r\n")?;
+        let attempt = call.try_read_status(b"HTTP/1.1 200 OK\r\n")?;
         assert!(attempt.is_success());
 
         // How many bytes of the input was consumed. This can be used to move
@@ -118,7 +118,7 @@ mod test {
         let call = attempt.proceed().unwrap_stay();
 
         // Complete headers
-        let mut attempt = call.try_read_headers(b"Host: foo.test\r\nX-My-Special: bar\r\n\r\n")?;
+        let attempt = call.try_read_headers(b"Host: foo.test\r\nX-My-Special: bar\r\n\r\n")?;
         assert!(attempt.is_success());
 
         // How many bytes of the input was consumed. This can be used to move
