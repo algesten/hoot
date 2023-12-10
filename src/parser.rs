@@ -1,8 +1,9 @@
 use core::str;
 use httparse::Header;
 
-use crate::model::{HttpVersion, Status};
+use crate::res::Status;
 use crate::util::cast_buf_for_headers;
+use crate::HttpVersion;
 use crate::{HootError, Result};
 
 pub fn parse_response_line(src: &[u8]) -> Result<ParseResult<Status>> {

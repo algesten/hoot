@@ -1,24 +1,15 @@
 //! no_std, allocation free http library.
 
 // For tests we use std.
-// #![cfg_attr(not(test), no_std)]
+#![cfg_attr(not(test), no_std)]
 
 mod out;
 mod util;
 
-mod model;
-
-pub use model::{HttpVersion, Status};
-
 mod vars;
 pub use vars::{body, method, state, version};
 
-// mod recv;
-// pub use recv::{Attempt, AttemptHeaders, AttemptStatus, MaybeBody, MaybeNext};
-
 mod parser;
-
-// mod send;
 
 mod error;
 pub use error::HootError;
@@ -28,10 +19,31 @@ mod req;
 pub use req::{Output, Request, ResumeToken};
 
 mod res;
-pub use res::Response;
+pub use res::{Response, Status};
 
 // Re-export this
 pub use httparse::Header;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum HttpVersion {
+    Http10,
+    Http11,
+}
+
+#[cfg(any(std, test))]
+mod std_impls {
+    use super::*;
+    use std::fmt;
+
+    impl fmt::Debug for HttpVersion {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                Self::Http10 => write!(f, "Http10"),
+                Self::Http11 => write!(f, "Http11"),
+            }
+        }
+    }
+}
 
 #[cfg(test)]
 mod test {

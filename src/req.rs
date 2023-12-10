@@ -4,9 +4,9 @@ use core::mem;
 use core::ops::Deref;
 
 use crate::error::OVERFLOW;
-use crate::model::RecvBodyMode;
 use crate::out::{Out, Writer};
 use crate::parser::parse_headers;
+use crate::res::RecvBodyMode;
 use crate::util::compare_lowercase_ascii;
 use crate::vars::body::*;
 use crate::vars::method::*;
