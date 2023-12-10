@@ -12,7 +12,7 @@ use crate::vars::body::*;
 use crate::vars::method::*;
 use crate::vars::private::*;
 use crate::vars::version::*;
-use crate::{state::*, HttpVersion};
+use crate::{state::*, HttpVersion, Response};
 use crate::{HootError, Result};
 
 pub struct Request<'a, S: State, V: Version, M: Method, B: BodyType> {
@@ -384,6 +384,12 @@ impl<'a, V: Version, M: MethodWithBody> Request<'a, SEND_TRAILER, V, M, ()> {
         w.commit();
 
         Ok(self.transition())
+    }
+}
+
+impl ResumeToken<ENDED, (), (), ()> {
+    pub fn into_response(self) -> Response<RECV_RESPONSE> {
+        Response::resume(self)
     }
 }
 

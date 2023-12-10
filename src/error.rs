@@ -1,7 +1,7 @@
 use core::num::ParseIntError;
 use core::str::Utf8Error;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HootError {
     /// The borrowed buffer did not have enough space to hold the
     /// data we attempted to write.

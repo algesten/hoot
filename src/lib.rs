@@ -55,7 +55,7 @@ mod test {
 
         // ************* GET REQUEST *****************
 
-        // Call::new starts a new request. The buffer can be on the stack, heap or anywe you want.
+        // Request::new starts a new request. The buffer can be on the stack, heap or anywe you want.
         // It is borrowed until we call .flush().
         let output = Request::new(&mut buf)
             // First we select if this is HTTP/1.0 or HTTP/1.1
@@ -80,7 +80,7 @@ mod test {
 
         // ************* SEND HEADERS *****************
 
-        // `Call::resume` takes the state and continues where we left off before calling `.flush()`.
+        // `Request::resume` takes the state and continues where we left off before calling `.flush()`.
         // The buffer to borrow can be the same we used initially or not. Subsequent output is
         // written to this buffer.
         let output = Request::resume(state, &mut buf)
@@ -100,19 +100,20 @@ mod test {
 
         // ************* READ STATUS LINE *****************
 
-        // Resume a Response from the request ResumeToken.
-        let call = Response::resume(output.ready());
+        //  Response from the resume token.
+        let response = output.ready().into_response();
 
         // Try read incomplete input.
-        let attempt = call.try_read_response(b"HTTP/1.", &mut buf)?;
+        let attempt = response.try_read_response(b"HTTP/1.", &mut buf)?;
         assert!(!attempt.is_success());
 
-        // Get the Call back from an failed attempt. unwrap_stay() will
+        // Get the Response back from an failed attempt. unwrap_retry() will
         // definitely work since !attempt.is_success()
-        let call = attempt.next().unwrap_retry();
+        let response = attempt.next().unwrap_retry();
 
-        // Try read incomplete input
-        let attempt = call.try_read_response(b"HTTP/1.1 200 OK\r\nHost: foo\r\n\r\n", &mut buf)?;
+        // Try read complete input
+        let attempt =
+            response.try_read_response(b"HTTP/1.1 200 OK\r\nHost: foo\r\n\r\n", &mut buf)?;
         assert!(attempt.is_success());
 
         // Status line information.
