@@ -175,7 +175,7 @@ impl Response<RECV_BODY> {
         dst: &'b mut [u8],
     ) -> Result<ReadResult<'b>> {
         // If we already read to completion, do not use any more input.
-        if self.state.body_complete {
+        if self.state.did_read_to_end {
             return Ok(ReadResult {
                 input_used: 0,
                 output: &[],
@@ -192,7 +192,7 @@ impl Response<RECV_BODY> {
 
         let is_complete = ret.as_ref().map(|r| r.is_complete).unwrap_or(false);
         if is_complete {
-            self.state.body_complete = true;
+            self.state.did_read_to_end = true;
         }
 
         ret
@@ -220,6 +220,22 @@ impl Response<RECV_BODY> {
             output,
             is_complete,
         })
+    }
+
+    pub fn complete(self) -> Result<Response<ENDED>> {
+        if let Some(checker) = &self.state.recv_checker {
+            checker.assert_expected(HootError::RecvLessThanContentLength)?;
+        }
+
+        // unwrap is ok because body mode must be set by now.
+        let mode = self.state.recv_body_mode.unwrap();
+        let is_read_to_close = matches!(mode, RecvBodyMode::CloseDelimited);
+
+        if !is_read_to_close && !self.state.did_read_to_end {
+            return Err(HootError::TooManyHeaders);
+        }
+
+        Ok(self.transition())
     }
 }
 

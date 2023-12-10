@@ -37,7 +37,7 @@ pub(crate) struct CallState {
     pub send_checker: Option<LengthChecker>,
     pub recv_body_mode: Option<RecvBodyMode>,
     pub recv_checker: Option<LengthChecker>,
-    pub body_complete: bool,
+    pub did_read_to_end: bool,
 }
 
 impl<'a> Request<'a, (), (), (), ()> {
@@ -451,7 +451,7 @@ mod std_impls {
                 .field("send_checker", &self.send_checker)
                 .field("recv_body_mode", &self.recv_body_mode)
                 .field("recv_checker", &self.recv_checker)
-                .field("body_complete", &self.body_complete)
+                .field("body_complete", &self.did_read_to_end)
                 .finish()
         }
     }
