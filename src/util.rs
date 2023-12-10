@@ -47,3 +47,21 @@ pub(crate) fn cast_buf_for_headers<'a, 'b>(buf: &'a mut [u8]) -> Result<&'a mut 
 
     Ok(header_buf)
 }
+
+pub(crate) fn compare_lowercase_ascii(a: &str, lowercased: &str) -> bool {
+    if a.len() != lowercased.len() {
+        return false;
+    }
+
+    for (a, b) in a.chars().zip(lowercased.chars()) {
+        if !a.is_ascii() {
+            return false;
+        }
+        let norm = a.to_ascii_lowercase();
+        if norm != b {
+            return false;
+        }
+    }
+
+    true
+}

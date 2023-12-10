@@ -1,3 +1,4 @@
+use core::num::ParseIntError;
 use core::str::Utf8Error;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -56,6 +57,12 @@ pub enum HootError {
 
     /// If we attempt to call `.complete()` on an AttemptStatus that didn't get full input to succeed.
     StatusIsNotComplete,
+
+    /// Failed to parse an integer. This can happen if a Content-Length header contains bogus.
+    ParseIntError,
+
+    /// More than one Content-Length header in response.
+    DuplicateContentLength,
 }
 
 pub(crate) static OVERFLOW: Result<()> = Err(HootError::OutputOverflow);
@@ -65,5 +72,11 @@ pub type Result<T> = core::result::Result<T, HootError>;
 impl From<Utf8Error> for HootError {
     fn from(_: Utf8Error) -> Self {
         HootError::ConvertBytesToStr
+    }
+}
+
+impl From<ParseIntError> for HootError {
+    fn from(_: ParseIntError) -> Self {
+        HootError::ParseIntError
     }
 }

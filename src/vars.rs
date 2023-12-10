@@ -47,7 +47,11 @@ pub(crate) mod private {
     pub trait Version {
         fn version() -> HttpVersion;
     }
-    pub trait Method {}
+    pub trait Method {
+        fn is_head() -> bool {
+            false
+        }
+    }
 
     impl State for () {}
     impl State for INIT {}
@@ -82,7 +86,11 @@ pub(crate) mod private {
     impl Method for POST {}
     impl Method for PUT {}
     impl Method for DELETE {}
-    impl Method for HEAD {}
+    impl Method for HEAD {
+        fn is_head() -> bool {
+            true
+        }
+    }
     impl Method for TRACE {}
     impl Method for CONNECT {}
     impl Method for PATCH {}

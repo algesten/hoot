@@ -1,11 +1,14 @@
 use core::marker::PhantomData;
 use core::mem;
 use core::ops::Deref;
+use core::str;
 
 use crate::out::Out;
+use crate::util::compare_lowercase_ascii;
 use crate::vars::private;
 
 use crate::{state::*, HootError, Result};
+use httparse::Header;
 use private::*;
 
 pub struct CallState<S, V, M, B>
@@ -20,6 +23,8 @@ where
     _method: PhantomData<M>,
     _btype: PhantomData<B>,
     pub(crate) send_byte_checker: Option<SendByteChecker>,
+    pub(crate) status_code: Option<u16>,
+    pub(crate) recv_body_mode: Option<RecvBodyMode>,
 }
 
 pub(crate) struct SendByteChecker {
@@ -66,6 +71,8 @@ impl CallState<(), (), (), ()> {
             _method: PhantomData,
             _btype: PhantomData,
             send_byte_checker: None,
+            status_code: None,
+            recv_body_mode: None,
         }
     }
 }
@@ -167,6 +174,66 @@ pub struct Status<'a>(pub HttpVersion, pub u16, pub &'a str);
 pub enum HttpVersion {
     Http10,
     Http11,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum RecvBodyMode {
+    /// Delimited by content-length. 0 is also a valid value when we don't expect a body,
+    /// due to HEAD or status, but still want to leave the socket open.
+    LengthDelimited(u64),
+    /// Chunked transfer encoding
+    Chunked,
+    /// Expect remote to close at end of body.
+    CloseDelimited,
+}
+
+impl RecvBodyMode {
+    pub fn from(
+        is_http10: bool,
+        is_head: bool,
+        status_code: u16,
+        headers: &[Header<'_>],
+    ) -> Result<Self> {
+        let has_no_body = is_head || matches!(status_code, 204 | 304);
+
+        if has_no_body {
+            return Ok(Self::LengthDelimited(0));
+        }
+
+        let mut content_length: Option<u64> = None;
+        let mut is_chunked = false;
+
+        for head in headers {
+            if compare_lowercase_ascii(head.name, "content-length") {
+                let v = str::from_utf8(head.value)?.parse::<u64>()?;
+                if content_length.is_some() {
+                    return Err(HootError::DuplicateContentLength);
+                }
+                content_length = Some(v);
+            } else if !is_chunked && compare_lowercase_ascii(head.name, "transfer-encoding") {
+                // Header can repeat, stop looking if we found "chunked"
+                let s = str::from_utf8(head.value)?;
+                is_chunked = s
+                    .split(",")
+                    .map(|v| v.trim())
+                    .any(|v| compare_lowercase_ascii(v, "chunked"));
+            }
+        }
+
+        if is_chunked && !is_http10 {
+            // https://datatracker.ietf.org/doc/html/rfc2616#section-4.4
+            // Messages MUST NOT include both a Content-Length header field and a
+            // non-identity transfer-coding. If the message does include a non-
+            // identity transfer-coding, the Content-Length MUST be ignored.
+            return Ok(Self::Chunked);
+        }
+
+        if let Some(len) = content_length {
+            return Ok(Self::LengthDelimited(len));
+        }
+
+        Ok(Self::CloseDelimited)
+    }
 }
 
 #[cfg(any(std, test))]

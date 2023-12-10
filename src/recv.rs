@@ -1,8 +1,9 @@
-use crate::model::Status;
+use crate::method::HEAD;
+use crate::model::{RecvBodyMode, Status};
 use crate::parser::{parse_headers, parse_response_line, ParseResult};
 use crate::vars::private;
-use crate::Result;
 use crate::{Call, HootError};
+use crate::{HttpVersion, Result};
 
 use crate::state::*;
 use httparse::Header;
@@ -49,7 +50,7 @@ impl<'a, 'b: 'a, V: Version, M: Method>
         // Starting state.
         Call<'a, RECV_STATUS, V, M, ()>,
         // Transitioned state.
-        Call<'a, RECV_HEADERS, (), M, ()>,
+        Call<'a, RECV_HEADERS, V, M, ()>,
     > for AttemptStatus<'a, 'b, V, M>
 {
     type Output = Status<'b>;
@@ -68,7 +69,7 @@ impl<'a, 'b: 'a, V: Version, M: Method>
 
     fn proceed(
         self,
-    ) -> MaybeNext<Call<'a, RECV_STATUS, V, M, ()>, Call<'a, RECV_HEADERS, (), M, ()>> {
+    ) -> MaybeNext<Call<'a, RECV_STATUS, V, M, ()>, Call<'a, RECV_HEADERS, V, M, ()>> {
         if self.success {
             MaybeNext::Next(self.call.transition())
         } else {
@@ -78,7 +79,7 @@ impl<'a, 'b: 'a, V: Version, M: Method>
 }
 
 impl<'a, V: Version, M: Method> Call<'a, RECV_STATUS, V, M, ()> {
-    pub fn try_read_status<'b>(self, buf: &'b [u8]) -> Result<AttemptStatus<'a, 'b, V, M>> {
+    pub fn try_read_status<'b>(mut self, buf: &'b [u8]) -> Result<AttemptStatus<'a, 'b, V, M>> {
         let ParseResult {
             complete,
             consumed,
@@ -90,6 +91,9 @@ impl<'a, V: Version, M: Method> Call<'a, RECV_STATUS, V, M, ()> {
             if output.0 != V::version() {
                 return Err(HootError::HttpVersionMismatch);
             }
+
+            assert!(self.state.status_code.is_none());
+            self.state.status_code = Some(output.1);
         }
 
         Ok(AttemptStatus {
@@ -101,21 +105,21 @@ impl<'a, V: Version, M: Method> Call<'a, RECV_STATUS, V, M, ()> {
     }
 }
 
-pub struct AttemptHeaders<'a, 'b, M: Method> {
-    call: Call<'a, RECV_HEADERS, (), M, ()>,
+pub struct AttemptHeaders<'a, 'b, V: Version, M: Method> {
+    call: Call<'a, RECV_HEADERS, V, M, ()>,
     success: bool,
     consumed: usize,
     output_ptr: *const Header<'b>,
     output_len: usize,
 }
 
-impl<'a, 'b: 'a, M: Method>
+impl<'a, 'b: 'a, V: Version, M: Method>
     Attempt<
         // Starting state.
-        Call<'a, RECV_HEADERS, (), M, ()>,
+        Call<'a, RECV_HEADERS, V, M, ()>,
         // Transitioned state.
         Call<'a, RECV_BODY, (), M, ()>,
-    > for AttemptHeaders<'a, 'b, M>
+    > for AttemptHeaders<'a, 'b, V, M>
 {
     type Output = [Header<'b>];
 
@@ -138,7 +142,7 @@ impl<'a, 'b: 'a, M: Method>
 
     fn proceed(
         self,
-    ) -> MaybeNext<Call<'a, RECV_HEADERS, (), M, ()>, Call<'a, RECV_BODY, (), M, ()>> {
+    ) -> MaybeNext<Call<'a, RECV_HEADERS, V, M, ()>, Call<'a, RECV_BODY, (), M, ()>> {
         if self.success {
             MaybeNext::Next(self.call.transition())
         } else {
@@ -147,13 +151,28 @@ impl<'a, 'b: 'a, M: Method>
     }
 }
 
-impl<'a, M: Method> Call<'a, RECV_HEADERS, (), M, ()> {
-    pub fn try_read_headers<'b: 'a>(mut self, buf: &'b [u8]) -> Result<AttemptHeaders<'a, 'b, M>> {
+impl<'a, V: Version, M: Method> Call<'a, RECV_HEADERS, V, M, ()> {
+    pub fn try_read_headers<'b: 'a>(
+        mut self,
+        buf: &'b [u8],
+    ) -> Result<AttemptHeaders<'a, 'b, V, M>> {
         // Borrow the remaining part of the buffer. This is probably the entire buffer since
         // the user would have flushed the request before parsing a response.
         let dst = self.out.borrow_remaining();
 
         let parse = parse_headers(buf, dst)?;
+
+        if parse.complete {
+            assert!(self.state.recv_body_mode.is_none());
+
+            let is_http10 = V::version() == HttpVersion::Http10;
+            let is_head = M::is_head();
+            // Since we (successfully) read the response line, we must have a status.
+            let status_code = self.state.status_code.expect("status code");
+
+            let mode = RecvBodyMode::from(is_http10, is_head, status_code, parse.output)?;
+            self.state.recv_body_mode = Some(mode);
+        }
 
         Ok(AttemptHeaders {
             success: parse.complete,
@@ -165,7 +184,6 @@ impl<'a, M: Method> Call<'a, RECV_HEADERS, (), M, ()> {
     }
 }
 
-// https://datatracker.ietf.org/doc/html/rfc2616#section-4.4
-// Messages MUST NOT include both a Content-Length header field and a
-// non-identity transfer-coding. If the message does include a non-
-// identity transfer-coding, the Content-Length MUST be ignored.
+impl<'a, M: Method> Call<'a, RECV_BODY, (), M, ()> {
+    //
+}

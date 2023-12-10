@@ -5,6 +5,7 @@ use crate::error::OVERFLOW;
 use crate::model::SendByteChecker;
 use crate::out::Writer;
 use crate::parser::parse_headers;
+use crate::util::compare_lowercase_ascii;
 use crate::vars::private;
 use crate::{Call, HttpVersion};
 use crate::{HootError, Result};
@@ -325,21 +326,8 @@ const HEADERS_FORBID_TRAILER: &[&str] = &[
 
 fn check_headers(name: &str, forbidden: &[&str], err: HootError) -> Result<()> {
     for c in forbidden {
-        // Length diffing, then not equal.
-        if name.len() != c.len() {
+        if !compare_lowercase_ascii(name, c) {
             continue;
-        }
-
-        for (a, b) in name.chars().zip(c.chars()) {
-            if !a.is_ascii_alphabetic() {
-                // a is not even ascii, then not equal.
-                continue;
-            }
-            let norm = a.to_ascii_lowercase();
-            if norm != b {
-                // after normalizing a, not matching b, then not equal.
-                continue;
-            }
         }
 
         // name matched c. This is a forbidden header.
