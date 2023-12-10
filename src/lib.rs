@@ -15,7 +15,7 @@ mod vars;
 pub use vars::{body, method, state, version};
 
 mod recv;
-pub use recv::Attempt;
+pub use recv::{Attempt, AttemptStatus};
 mod parser;
 mod send;
 
@@ -72,6 +72,9 @@ pub enum HootError {
 
     /// The requested HTTP version does not match the response HTTP version.
     HttpVersionMismatch,
+
+    /// If we attempt to call `.complete()` on an AttemptStatus that didn't get full input to succeed.
+    StatusIsNotComplete,
 }
 
 pub(crate) static OVERFLOW: Result<()> = Err(HootError::OutputOverflow);
@@ -144,13 +147,14 @@ mod test {
 
         // Try read incomplete input.
         let attempt = call.try_read_status(b"HTTP/1.")?;
-        assert!(attempt.is_failure());
+        assert!(!attempt.is_success());
 
-        // Get the Call back from an failed attempt.
-        let call = attempt.revert().unwrap();
+        // Get the Call back from an failed attempt. unwrap_stay() will
+        // definitely work since !attempt.is_success()
+        let call = attempt.proceed().unwrap_stay();
 
         // Try read complete input
-        let attempt = call.try_read_status(b"HTTP/1.1 200 OK\r\n")?;
+        let mut attempt = call.try_read_status(b"HTTP/1.1 200 OK\r\n")?;
         assert!(attempt.is_success());
 
         // How many bytes of the input was consumed. This can be used to move
@@ -162,9 +166,35 @@ mod test {
         assert_eq!(status, &Status(HttpVersion::Http11, 200, "OK"));
 
         // Complete the attempt, which gives us the call in a state expecting to read headers.
-        let call = attempt.complete().unwrap();
+        // Unwrapping next will work since attempt.is_success()
+        let call = attempt.proceed().unwrap_next();
 
         // ************* READ RESPONSE HEADERS *****************
+
+        // Incomplete (need additional \r\n at end).
+        let attempt = call.try_read_headers(b"Host: foo.test\r\n")?;
+        assert!(!attempt.is_success());
+
+        // Get the Call back from an failed attempt. unwrap_stay() will
+        // definitely work since !attempt.is_success()
+        let call = attempt.proceed().unwrap_stay();
+
+        // Complete headers
+        let mut attempt = call.try_read_headers(b"Host: foo.test\r\nX-My-Special: bar\r\n\r\n")?;
+        assert!(attempt.is_success());
+
+        // How many bytes of the input was consumed. This can be used to move
+        // cursors in some input buffer.
+        assert_eq!(attempt.consumed(), 37);
+
+        // The parsed headers
+        let headers = attempt.output().unwrap();
+        assert_eq!(headers.len(), 2);
+
+        assert_eq!(headers[0].name, "Host");
+        assert_eq!(headers[0].value, b"foo.test");
+        assert_eq!(headers[1].name, "X-My-Special");
+        assert_eq!(headers[1].value, b"bar");
 
         Ok(())
     }
