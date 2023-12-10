@@ -7,7 +7,7 @@ use crate::error::OVERFLOW;
 use crate::out::{Out, Writer};
 use crate::parser::parse_headers;
 use crate::res::RecvBodyMode;
-use crate::util::compare_lowercase_ascii;
+use crate::util::{compare_lowercase_ascii, LengthChecker};
 use crate::vars::body::*;
 use crate::vars::method::*;
 use crate::vars::private::*;
@@ -37,33 +37,15 @@ pub(crate) struct CallState {
     pub recv_body_mode: Option<RecvBodyMode>,
 }
 
-pub(crate) struct LengthChecker {
-    handled: u64,
-    expected: u64,
-}
-
-impl LengthChecker {
-    pub fn new(expected: u64) -> Self {
-        LengthChecker {
-            handled: 0,
-            expected,
+impl<'a> Request<'a, (), (), (), ()> {
+    pub fn new(buf: &'a mut [u8]) -> Request<'a, INIT, (), (), ()> {
+        let typ: Typ<(), (), (), ()> = Typ::default();
+        Request {
+            typ,
+            state: CallState::default(),
+            out: Out::wrap(buf),
         }
-    }
-
-    pub fn append(&mut self, amount: usize, err: HootError) -> Result<()> {
-        let new_total = self.handled + amount as u64;
-        if new_total > self.expected {
-            return Err(err);
-        }
-        self.handled = new_total;
-        Ok(())
-    }
-
-    pub fn assert_expected(&self, err: HootError) -> Result<()> {
-        if self.handled != self.expected {
-            return Err(err);
-        }
-        Ok(())
+        .transition()
     }
 }
 
@@ -184,18 +166,6 @@ pub struct ResumeToken<S: State, V: Version, M: Method, B: BodyType> {
 impl<S: State, V: Version, M: Method, B: BodyType> ResumeToken<S, V, M, B> {
     pub(crate) fn into_state(self) -> CallState {
         self.state
-    }
-}
-
-impl<'a> Request<'a, (), (), (), ()> {
-    pub fn new(buf: &'a mut [u8]) -> Request<'a, INIT, (), (), ()> {
-        let typ: Typ<(), (), (), ()> = Typ::default();
-        Request {
-            typ,
-            state: CallState::default(),
-            out: Out::wrap(buf),
-        }
-        .transition()
     }
 }
 

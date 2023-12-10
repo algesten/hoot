@@ -65,3 +65,33 @@ pub(crate) fn compare_lowercase_ascii(a: &str, lowercased: &str) -> bool {
 
     true
 }
+
+pub(crate) struct LengthChecker {
+    handled: u64,
+    expected: u64,
+}
+
+impl LengthChecker {
+    pub fn new(expected: u64) -> Self {
+        LengthChecker {
+            handled: 0,
+            expected,
+        }
+    }
+
+    pub fn append(&mut self, amount: usize, err: HootError) -> Result<()> {
+        let new_total = self.handled + amount as u64;
+        if new_total > self.expected {
+            return Err(err);
+        }
+        self.handled = new_total;
+        Ok(())
+    }
+
+    pub fn assert_expected(&self, err: HootError) -> Result<()> {
+        if self.handled != self.expected {
+            return Err(err);
+        }
+        Ok(())
+    }
+}
