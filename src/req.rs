@@ -33,7 +33,7 @@ struct Typ<S: State, V: Version, M: Method, B: BodyType>(
 #[derive(Default)]
 pub(crate) struct CallState {
     pub version: Option<HttpVersion>,
-    pub is_head: Option<bool>,
+    pub head: Option<bool>,
     pub send_checker: Option<LengthChecker>,
     pub recv_body_mode: Option<RecvBodyMode>,
     pub recv_checker: Option<LengthChecker>,
@@ -90,7 +90,7 @@ impl<'a, S: State, V: Version, M: Method, B: BodyType> Request<'a, S, V, M, B> {
 
         let result = parse_headers(written, buf)?;
 
-        if result.output.len() != 1 {
+        if result.len() != 1 {
             // If we don't manage to parse back the hedaer we just wrote, it's a bug in hoot.
             panic!("Failed to parse one written header");
         }
@@ -121,8 +121,8 @@ impl<'a, S: State, V: Version, M: Method, B: BodyType> Request<'a, S, V, M, B> {
 }
 
 pub struct Output<'a, S: State, V: Version, M: Method, B: BodyType> {
-    pub(crate) token: ResumeToken<S, V, M, B>,
-    pub(crate) output: &'a [u8],
+    token: ResumeToken<S, V, M, B>,
+    output: &'a [u8],
 }
 
 impl<'a, S: State, V: Version, M: Method, B: BodyType> Output<'a, S, V, M, B> {
@@ -173,7 +173,7 @@ macro_rules! write_line_10 {
             path: &str,
         ) -> Result<Request<'a, SEND_HEADERS, HTTP_10, $meth_up, ()>> {
             write_line_10(self.out.writer(), stringify!($meth_up), path)?;
-            self.state.is_head = Some($meth_up::is_head());
+            self.state.head = Some($meth_up::head());
             Ok(self.transition())
         }
     };
@@ -193,7 +193,7 @@ macro_rules! write_line_11 {
             path: &str,
         ) -> Result<Request<'a, SEND_HEADERS, HTTP_11, $meth_up, ()>> {
             write_line_11(self.out.writer(), stringify!($meth_up), host, path)?;
-            self.state.is_head = Some($meth_up::is_head());
+            self.state.head = Some($meth_up::head());
             Ok(self.transition())
         }
     };
@@ -453,7 +453,7 @@ mod std_impls {
     impl fmt::Debug for CallState {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             f.debug_struct("CallState")
-                .field("is_head", &self.is_head)
+                .field("head", &self.head)
                 .field("send_checker", &self.send_checker)
                 .field("recv_body_mode", &self.recv_body_mode)
                 .field("recv_checker", &self.recv_checker)

@@ -72,6 +72,12 @@ pub enum HootError {
 
     /// Incoming chunked encoding is incorrect.
     IncorrectChunk,
+
+    /// Invalid byte where token is required.
+    Token,
+
+    /// Invalid byte in HTTP version.
+    Version,
 }
 
 pub(crate) static OVERFLOW: Result<()> = Err(HootError::OutputOverflow);
@@ -87,5 +93,19 @@ impl From<Utf8Error> for HootError {
 impl From<ParseIntError> for HootError {
     fn from(_: ParseIntError) -> Self {
         HootError::ParseIntError
+    }
+}
+
+impl From<httparse::Error> for HootError {
+    fn from(value: httparse::Error) -> Self {
+        match value {
+            httparse::Error::HeaderName => HootError::HeaderName,
+            httparse::Error::HeaderValue => HootError::HeaderValue,
+            httparse::Error::NewLine => HootError::NewLine,
+            httparse::Error::Status => HootError::Status,
+            httparse::Error::Token => HootError::Token,
+            httparse::Error::TooManyHeaders => HootError::TooManyHeaders,
+            httparse::Error::Version => HootError::Version,
+        }
     }
 }

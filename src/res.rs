@@ -4,9 +4,9 @@ use core::str;
 
 use httparse::Header;
 
-use crate::parser::{find_crlf, parse_headers, parse_response_line};
+use crate::parser::find_crlf;
 use crate::req::CallState;
-use crate::util::{compare_lowercase_ascii, LengthChecker};
+use crate::util::{cast_buf_for_headers, compare_lowercase_ascii, LengthChecker};
 use crate::vars::private::*;
 use crate::{state::*, HootError, HttpVersion};
 use crate::{Result, ResumeToken};
@@ -30,7 +30,7 @@ impl Response<()> {
             _typ: PhantomData,
             state: CallState {
                 version: Some(HttpVersion::Http11),
-                is_head: Some(false),
+                head: Some(false),
                 ..Default::default()
             },
         }
@@ -47,6 +47,7 @@ impl<S: State> Response<S> {
 pub struct ResponseAttempt<'a, 'b> {
     response: Response<RECV_RESPONSE>,
     success: bool,
+    input_used: usize,
     status: Option<Status<'a>>,
     headers: Option<&'b [Header<'a>]>,
 }
@@ -59,13 +60,18 @@ impl<'a, 'b> ResponseAttempt<'a, 'b> {
         ResponseAttempt {
             response,
             success: false,
+            input_used: 0,
             status: None,
             headers: None,
         }
     }
 
-    pub fn is_success(&self) -> bool {
+    pub fn success(&self) -> bool {
         self.success
+    }
+
+    pub fn input_used(&self) -> usize {
+        self.input_used
     }
 
     pub fn status(&self) -> Option<&Status<'a>> {
@@ -125,29 +131,26 @@ impl Response<RECV_RESPONSE> {
         input: &'a [u8],
         buf: &'b mut [u8],
     ) -> Result<ResponseAttempt<'a, 'b>> {
-        let line = parse_response_line(input)?;
-        if !line.success {
-            return Ok(ResponseAttempt::incomplete(self));
-        }
+        let headers = cast_buf_for_headers(buf)?;
+        let mut r = httparse::Response::new(headers);
 
-        // Unwrap is ok because we must have set the version earlier in request.
-        let request_version = self.state.version.unwrap();
+        let n = match r.parse(input)? {
+            httparse::Status::Complete(v) => v,
+            httparse::Status::Partial => return Ok(ResponseAttempt::incomplete(self)),
+        };
 
-        if request_version != line.output.0 {
-            return Err(HootError::HttpVersionMismatch);
-        }
+        let ver = match r.version.unwrap() {
+            0 => HttpVersion::Http10,
+            1 => HttpVersion::Http11,
+            _ => return Err(HootError::Version),
+        };
 
-        let status_offset = line.consumed;
-
-        let headers = parse_headers(&input[status_offset..], buf)?;
-        if !headers.success {
-            return Ok(ResponseAttempt::incomplete(self));
-        }
+        let status = Status(ver, r.code.unwrap(), r.reason.unwrap_or(""));
 
         // Derive body mode from knowledge this far.
-        let is_http10 = request_version == HttpVersion::Http10;
-        let is_head = self.state.is_head.unwrap(); // Ok for same reason as above.
-        let mode = RecvBodyMode::from(is_http10, is_head, line.output.1, headers.output)?;
+        let http10 = ver == HttpVersion::Http10;
+        let head = self.state.head.unwrap(); // Ok for same reason as above.
+        let mode = RecvBodyMode::from(http10, head, status.1, &r.headers)?;
 
         // If we are awaiting a length, put a length checker in place
         if let RecvBodyMode::LengthDelimited(len) = mode {
@@ -158,12 +161,12 @@ impl Response<RECV_RESPONSE> {
 
         // Remember te body mode
         self.state.recv_body_mode = Some(mode);
-
         Ok(ResponseAttempt {
             response: self,
             success: true,
-            status: Some(line.output),
-            headers: Some(headers.output),
+            input_used: n,
+            status: Some(status),
+            headers: Some(r.headers),
         })
     }
 }
@@ -179,7 +182,7 @@ impl Response<RECV_BODY> {
             return Ok(ReadResult {
                 input_used: 0,
                 output: &[],
-                is_complete: true,
+                complete: true,
             });
         }
 
@@ -190,8 +193,8 @@ impl Response<RECV_BODY> {
             RecvBodyMode::CloseDelimited => self.read_limit(src, dst, false),
         };
 
-        let is_complete = ret.as_ref().map(|r| r.is_complete).unwrap_or(false);
-        if is_complete {
+        let complete = ret.as_ref().map(|r| r.complete).unwrap_or(false);
+        if complete {
             self.state.did_read_to_end = true;
         }
 
@@ -206,11 +209,11 @@ impl Response<RECV_BODY> {
     ) -> Result<ReadResult<'b>> {
         let input_used = src.len().min(dst.len());
 
-        let mut is_complete = false;
+        let mut complete = false;
         if use_checker {
             let checker = self.state.recv_checker.as_mut().unwrap();
             checker.append(input_used, HootError::RecvMoreThanContentLength)?;
-            is_complete = checker.is_complete();
+            complete = checker.complete();
         }
 
         let output = &mut dst[..input_used];
@@ -218,7 +221,7 @@ impl Response<RECV_BODY> {
         Ok(ReadResult {
             input_used,
             output,
-            is_complete,
+            complete: complete,
         })
     }
 
@@ -229,9 +232,9 @@ impl Response<RECV_BODY> {
 
         // unwrap is ok because body mode must be set by now.
         let mode = self.state.recv_body_mode.unwrap();
-        let is_read_to_close = matches!(mode, RecvBodyMode::CloseDelimited);
+        let read_to_close = matches!(mode, RecvBodyMode::CloseDelimited);
 
-        if !is_read_to_close && !self.state.did_read_to_end {
+        if !read_to_close && !self.state.did_read_to_end {
             return Err(HootError::TooManyHeaders);
         }
 
@@ -242,11 +245,11 @@ impl Response<RECV_BODY> {
 fn read_chunked<'a, 'b>(src: &'a [u8], dst: &'b mut [u8]) -> Result<ReadResult<'b>> {
     let mut index_in = 0;
     let mut index_out = 0;
-    let mut is_complete = false;
+    let mut complete = false;
 
     while let Some((len_in, len_out)) = read_chunk(&src[index_in..], &mut dst[index_out..])? {
         if len_in == 0 {
-            is_complete = true;
+            complete = true;
             break;
         }
 
@@ -257,7 +260,7 @@ fn read_chunked<'a, 'b>(src: &'a [u8], dst: &'b mut [u8]) -> Result<ReadResult<'
     Ok(ReadResult {
         input_used: index_in,
         output: &dst[..index_out],
-        is_complete,
+        complete: complete,
     })
 }
 
@@ -295,9 +298,23 @@ fn read_chunk(src: &[u8], dst: &mut [u8]) -> Result<Option<(usize, usize)>> {
 }
 
 pub struct ReadResult<'b> {
-    pub input_used: usize,
-    pub output: &'b [u8],
-    pub is_complete: bool,
+    input_used: usize,
+    output: &'b [u8],
+    complete: bool,
+}
+
+impl ReadResult<'_> {
+    pub fn input_used(&self) -> usize {
+        self.input_used
+    }
+
+    pub fn output(&self) -> &[u8] {
+        &*self.output
+    }
+
+    pub fn complete(&self) -> bool {
+        self.complete
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -313,8 +330,8 @@ pub enum RecvBodyMode {
 
 impl RecvBodyMode {
     pub fn from(
-        is_http10: bool,
-        is_head: bool,
+        http10: bool,
+        head: bool,
         status_code: u16,
         headers: &[Header<'_>],
     ) -> Result<Self> {
@@ -323,7 +340,7 @@ impl RecvBodyMode {
             // All responses to the HEAD request method
             // MUST NOT include a message-body, even though the presence of entity-
             // header fields might lead one to believe they do.
-            is_head ||
+            head ||
             // All 1xx (informational), 204 (no content), and 304 (not modified) responses
             // MUST NOT include a message-body.
             status_code >= 100 && status_code <= 199 ||
@@ -337,7 +354,7 @@ impl RecvBodyMode {
         // All other responses do include a message-body, although it MAY be of zero length.
 
         let mut content_length: Option<u64> = None;
-        let mut is_chunked = false;
+        let mut chunked = false;
 
         for head in headers {
             if compare_lowercase_ascii(head.name, "content-length") {
@@ -346,17 +363,17 @@ impl RecvBodyMode {
                     return Err(HootError::DuplicateContentLength);
                 }
                 content_length = Some(v);
-            } else if !is_chunked && compare_lowercase_ascii(head.name, "transfer-encoding") {
+            } else if !chunked && compare_lowercase_ascii(head.name, "transfer-encoding") {
                 // Header can repeat, stop looking if we found "chunked"
                 let s = str::from_utf8(head.value)?;
-                is_chunked = s
+                chunked = s
                     .split(",")
                     .map(|v| v.trim())
                     .any(|v| compare_lowercase_ascii(v, "chunked"));
             }
         }
 
-        if is_chunked && !is_http10 {
+        if chunked && !http10 {
             // https://datatracker.ietf.org/doc/html/rfc2616#section-4.4
             // Messages MUST NOT include both a Content-Length header field and a
             // non-identity transfer-coding. If the message does include a non-
@@ -410,7 +427,7 @@ mod test {
         let r: Response<RECV_RESPONSE> = Response::new_test();
 
         let a = r.try_read_response(b"HTTP/1.1 404\r\n\r\n", &mut buf)?;
-        assert!(a.is_success());
+        assert!(a.success());
 
         let status = a.status().unwrap();
         assert_eq!(status, &Status(HttpVersion::Http11, 404, ""));

@@ -95,7 +95,7 @@ impl LengthChecker {
         Ok(())
     }
 
-    pub fn is_complete(&self) -> bool {
+    pub fn complete(&self) -> bool {
         self.handled == self.expected
     }
 }

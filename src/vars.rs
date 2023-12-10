@@ -49,7 +49,7 @@ pub(crate) mod private {
         fn version() -> HttpVersion;
     }
     pub trait Method {
-        fn is_head() -> bool {
+        fn head() -> bool {
             false
         }
     }
@@ -89,7 +89,7 @@ pub(crate) mod private {
     impl Method for PUT {}
     impl Method for DELETE {}
     impl Method for HEAD {
-        fn is_head() -> bool {
+        fn head() -> bool {
             true
         }
     }

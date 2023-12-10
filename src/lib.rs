@@ -105,16 +105,16 @@ mod test {
 
         // Try read incomplete input.
         let attempt = response.try_read_response(b"HTTP/1.", &mut buf)?;
-        assert!(!attempt.is_success());
+        assert!(!attempt.success());
 
         // Get the Response back from an failed attempt. unwrap_retry() will
-        // definitely work since !attempt.is_success()
+        // definitely work since !attempt.success()
         let response = attempt.next().unwrap_retry();
 
         // Try read complete input
         let attempt =
             response.try_read_response(b"HTTP/1.1 200 OK\r\nHost: foo\r\n\r\n", &mut buf)?;
-        assert!(attempt.is_success());
+        assert!(attempt.success());
 
         // Status line information.
         let status = attempt.status().unwrap();
