@@ -119,24 +119,12 @@ impl<'a, S: State, V: Version, M: Method, B: BodyType> Request<'a, S, V, M, B> {
     }
 }
 
-pub struct Output<'a, S, V, M, B>
-where
-    S: State,
-    V: Version,
-    M: Method,
-    B: BodyType,
-{
+pub struct Output<'a, S: State, V: Version, M: Method, B: BodyType> {
     pub(crate) token: ResumeToken<S, V, M, B>,
     pub(crate) output: &'a [u8],
 }
 
-impl<'a, S, V, M, B> Output<'a, S, V, M, B>
-where
-    S: State,
-    V: Version,
-    M: Method,
-    B: BodyType,
-{
+impl<'a, S: State, V: Version, M: Method, B: BodyType> Output<'a, S, V, M, B> {
     pub fn ready(self) -> ResumeToken<S, V, M, B> {
         self.token
     }
@@ -146,13 +134,7 @@ where
     }
 }
 
-impl<'a, S, V, M, B> Deref for Output<'a, S, V, M, B>
-where
-    S: State,
-    V: Version,
-    M: Method,
-    B: BodyType,
-{
+impl<'a, S: State, V: Version, M: Method, B: BodyType> Deref for Output<'a, S, V, M, B> {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
@@ -453,13 +435,7 @@ mod std_impls {
     use super::*;
     use std::fmt;
 
-    impl<'a, S, V, M, B> fmt::Debug for Request<'a, S, V, M, B>
-    where
-        S: State,
-        V: Version,
-        M: Method,
-        B: BodyType,
-    {
+    impl<'a, S: State, V: Version, M: Method, B: BodyType> fmt::Debug for Request<'a, S, V, M, B> {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             f.debug_struct("Call").finish()
         }
