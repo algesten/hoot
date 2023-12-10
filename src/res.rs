@@ -4,9 +4,9 @@ use core::str;
 
 use httparse::Header;
 
-use crate::parser::{parse_headers, parse_response_line};
+use crate::parser::{find_crlf, parse_headers, parse_response_line};
 use crate::req::CallState;
-use crate::util::compare_lowercase_ascii;
+use crate::util::{compare_lowercase_ascii, LengthChecker};
 use crate::vars::private::*;
 use crate::{state::*, HootError, HttpVersion};
 use crate::{Result, ResumeToken};
@@ -38,6 +38,9 @@ pub struct ResponseAttempt<'a, 'b> {
     status: Option<Status<'a>>,
     headers: Option<&'b [Header<'a>]>,
 }
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct Status<'a>(pub HttpVersion, pub u16, pub &'a str);
 
 impl<'a, 'b> ResponseAttempt<'a, 'b> {
     fn incomplete(response: Response<RECV_RESPONSE>) -> Self {
@@ -123,9 +126,19 @@ impl Response<RECV_RESPONSE> {
             return Ok(ResponseAttempt::incomplete(self));
         }
 
+        // Derive body mode from knowledge this far.
         let is_http10 = self.state.is_head.unwrap();
         let is_head = self.state.is_head.unwrap();
         let mode = RecvBodyMode::from(is_http10, is_head, line.output.1, headers.output)?;
+
+        // If we are awaiting a length, put a length checker in place
+        if let RecvBodyMode::LengthDelimited(len) = mode {
+            if len > 0 {
+                self.state.recv_checker = Some(LengthChecker::new(len));
+            }
+        }
+
+        // Remember te body mode
         self.state.recv_body_mode = Some(mode);
 
         Ok(ResponseAttempt {
@@ -137,8 +150,121 @@ impl Response<RECV_RESPONSE> {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub struct Status<'a>(pub HttpVersion, pub u16, pub &'a str);
+impl Response<RECV_BODY> {
+    pub fn read_body<'a, 'b>(
+        &mut self,
+        src: &'a [u8],
+        dst: &'b mut [u8],
+    ) -> Result<ReadResult<'b>> {
+        // If we already read to completion, do not use any more input.
+        if self.state.body_complete {
+            return Ok(ReadResult {
+                input_used: 0,
+                output: &[],
+                is_complete: true,
+            });
+        }
+
+        // unwrap is ok because we can't be in state RECV_BODY without setting it.
+        let ret = match self.state.recv_body_mode.unwrap() {
+            RecvBodyMode::LengthDelimited(_) => self.read_limit(src, dst, true),
+            RecvBodyMode::Chunked => read_chunked(src, dst),
+            RecvBodyMode::CloseDelimited => self.read_limit(src, dst, false),
+        };
+
+        let is_complete = ret.as_ref().map(|r| r.is_complete).unwrap_or(false);
+        if is_complete {
+            self.state.body_complete = true;
+        }
+
+        ret
+    }
+
+    fn read_limit<'a, 'b>(
+        &mut self,
+        src: &'a [u8],
+        dst: &'b mut [u8],
+        use_checker: bool,
+    ) -> Result<ReadResult<'b>> {
+        let input_used = src.len().min(dst.len());
+
+        let mut is_complete = false;
+        if use_checker {
+            let checker = self.state.recv_checker.as_mut().unwrap();
+            checker.append(input_used, HootError::RecvMoreThanContentLength)?;
+            is_complete = checker.is_complete();
+        }
+
+        let output = &mut dst[..input_used];
+        output.copy_from_slice(&src[..input_used]);
+        Ok(ReadResult {
+            input_used,
+            output,
+            is_complete,
+        })
+    }
+}
+
+fn read_chunked<'a, 'b>(src: &'a [u8], dst: &'b mut [u8]) -> Result<ReadResult<'b>> {
+    let mut index_in = 0;
+    let mut index_out = 0;
+    let mut is_complete = false;
+
+    while let Some((len_in, len_out)) = read_chunk(&src[index_in..], &mut dst[index_out..])? {
+        if len_in == 0 {
+            is_complete = true;
+            break;
+        }
+
+        index_in += len_in;
+        index_out += len_out;
+    }
+
+    Ok(ReadResult {
+        input_used: index_in,
+        output: &dst[..index_out],
+        is_complete,
+    })
+}
+
+fn read_chunk(src: &[u8], dst: &mut [u8]) -> Result<Option<(usize, usize)>> {
+    let Some(crlf1) = find_crlf(src) else {
+        return Ok(None);
+    };
+    let chunk_len = &src[..crlf1];
+
+    let len_end = chunk_len.iter().position(|c| *c == b';').unwrap_or(crlf1);
+    let len_str = str::from_utf8(&src[..len_end])?;
+    let len = usize::from_str_radix(len_str, 16)?;
+
+    // We read an entire chunk at a time.
+    let required_input = crlf1 + 2 + len + 2;
+
+    // Check there is enough length in input and output for the entire chunk.
+    if src.len() < required_input || dst.len() < len {
+        return Ok(None);
+    }
+
+    // Double check the input ends \r\n.
+    if src[required_input - 2] != b'\r' || src[required_input - 1] != b'\n' {
+        return Err(HootError::IncorrectChunk);
+    }
+
+    let from = {
+        let x = &src[crlf1 + 2..];
+        &x[..len]
+    };
+
+    (&mut dst[..len]).copy_from_slice(from);
+
+    Ok(Some((required_input, len)))
+}
+
+pub struct ReadResult<'b> {
+    pub input_used: usize,
+    pub output: &'b [u8],
+    pub is_complete: bool,
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum RecvBodyMode {

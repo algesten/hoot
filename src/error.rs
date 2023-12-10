@@ -49,6 +49,12 @@ pub enum HootError {
     /// Attempt to send less content than declared in the `Content-Length` header.
     SentLessThanContentLength,
 
+    /// Attempt to send more content than declared in the `Content-Length` header.
+    RecvMoreThanContentLength,
+
+    /// Attempt to send less content than declared in the `Content-Length` header.
+    RecvLessThanContentLength,
+
     /// Failed to read bytes as &str
     ConvertBytesToStr,
 
@@ -63,6 +69,9 @@ pub enum HootError {
 
     /// More than one Content-Length header in response.
     DuplicateContentLength,
+
+    /// Incoming chunked encoding is incorrect.
+    IncorrectChunk,
 }
 
 pub(crate) static OVERFLOW: Result<()> = Err(HootError::OutputOverflow);

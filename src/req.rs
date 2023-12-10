@@ -35,6 +35,8 @@ pub(crate) struct CallState {
     pub is_head: Option<bool>,
     pub send_checker: Option<LengthChecker>,
     pub recv_body_mode: Option<RecvBodyMode>,
+    pub recv_checker: Option<LengthChecker>,
+    pub body_complete: bool,
 }
 
 impl<'a> Request<'a, (), (), (), ()> {
