@@ -32,6 +32,7 @@ struct Typ<S: State, V: Version, M: Method, B: BodyType>(
 
 #[derive(Default)]
 pub(crate) struct CallState {
+    pub version: Option<HttpVersion>,
     pub is_head: Option<bool>,
     pub send_checker: Option<LengthChecker>,
     pub recv_body_mode: Option<RecvBodyMode>,
@@ -154,11 +155,13 @@ impl<S: State, V: Version, M: Method, B: BodyType> ResumeToken<S, V, M, B> {
 }
 
 impl<'a> Request<'a, INIT, (), (), ()> {
-    pub fn http_10(self) -> Request<'a, SEND_LINE, HTTP_10, (), ()> {
+    pub fn http_10(mut self) -> Request<'a, SEND_LINE, HTTP_10, (), ()> {
+        self.state.version = Some(HttpVersion::Http10);
         self.transition()
     }
 
-    pub fn http_11(self) -> Request<'a, SEND_LINE, HTTP_11, (), ()> {
+    pub fn http_11(mut self) -> Request<'a, SEND_LINE, HTTP_11, (), ()> {
+        self.state.version = Some(HttpVersion::Http11);
         self.transition()
     }
 }

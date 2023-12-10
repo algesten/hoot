@@ -23,6 +23,18 @@ impl Response<()> {
             state: request.into_state(),
         }
     }
+
+    #[cfg(test)]
+    fn new_test() -> Response<RECV_RESPONSE> {
+        Response {
+            _typ: PhantomData,
+            state: CallState {
+                version: Some(HttpVersion::Http11),
+                is_head: Some(false),
+                ..Default::default()
+            },
+        }
+    }
 }
 
 impl<S: State> Response<S> {
@@ -363,5 +375,25 @@ mod std_impls {
                 Self::CloseDelimited => write!(f, "CloseDelimited"),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_recv_no_headers() -> Result<()> {
+        let mut buf = [0; 1024];
+        let r: Response<RECV_RESPONSE> = Response::new_test();
+
+        let a = r.try_read_response(b"HTTP/1.1 404\r\n\r\n", &mut buf)?;
+        assert!(a.is_success());
+
+        let status = a.status().unwrap();
+        assert_eq!(status, &Status(HttpVersion::Http11, 404, ""));
+
+        assert!(a.headers().unwrap().is_empty());
+        Ok(())
     }
 }
