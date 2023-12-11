@@ -3,6 +3,7 @@ use core::marker::PhantomData;
 use core::mem;
 use core::ops::Deref;
 
+use crate::chunk::Dechunker;
 use crate::error::OVERFLOW;
 use crate::out::{Out, Writer};
 use crate::parser::parse_headers;
@@ -38,6 +39,7 @@ pub(crate) struct CallState {
     pub send_checker: Option<LengthChecker>,
     pub recv_body_mode: Option<RecvBodyMode>,
     pub recv_checker: Option<LengthChecker>,
+    pub dechunker: Option<Dechunker>,
     pub did_read_to_end: bool,
 }
 

@@ -4,7 +4,7 @@ use core::str;
 
 use httparse::Header;
 
-use crate::parser::find_crlf;
+use crate::chunk::Dechunker;
 use crate::req::CallState;
 use crate::util::{cast_buf_for_headers, compare_lowercase_ascii, LengthChecker};
 use crate::vars::state::*;
@@ -209,7 +209,7 @@ impl Response<RECV_BODY> {
         // unwrap is ok because we can't be in state RECV_BODY without setting it.
         let bit = match self.state.recv_body_mode.unwrap() {
             RecvBodyMode::LengthDelimited(_) => self.read_limit(src, dst, true),
-            RecvBodyMode::Chunked => read_chunked(src, dst),
+            RecvBodyMode::Chunked => self.read_chunked(src, dst),
             RecvBodyMode::CloseDelimited => self.read_limit(src, dst, false),
         }?;
 
@@ -249,6 +249,23 @@ impl Response<RECV_BODY> {
         })
     }
 
+    fn read_chunked<'a>(&mut self, src: &[u8], dst: &'a mut [u8]) -> Result<BodyBit<'a>> {
+        if self.state.dechunker.is_none() {
+            self.state.dechunker = Some(Dechunker::new());
+        }
+        let dechunker = self.state.dechunker.as_mut().unwrap();
+        let (input_used, produced_output) = dechunker.parse_input(src, dst)?;
+
+        let output = &mut dst[..produced_output];
+        let finished = dechunker.is_ended();
+
+        Ok(BodyBit {
+            input_used,
+            output,
+            finished,
+        })
+    }
+
     pub fn is_finished(&self) -> bool {
         let mode = self.state.recv_body_mode.unwrap();
         let close_delimited = matches!(mode, RecvBodyMode::CloseDelimited);
@@ -266,61 +283,6 @@ impl Response<RECV_BODY> {
 
         Ok(self.transition())
     }
-}
-
-fn read_chunked<'a, 'b>(src: &'a [u8], dst: &'b mut [u8]) -> Result<BodyBit<'b>> {
-    let mut index_in = 0;
-    let mut index_out = 0;
-    let mut complete = false;
-
-    while let Some((len_in, len_out)) = read_chunk(&src[index_in..], &mut dst[index_out..])? {
-        if len_in == 0 {
-            complete = true;
-            break;
-        }
-
-        index_in += len_in;
-        index_out += len_out;
-    }
-
-    Ok(BodyBit {
-        input_used: index_in,
-        output: &dst[..index_out],
-        finished: complete,
-    })
-}
-
-fn read_chunk(src: &[u8], dst: &mut [u8]) -> Result<Option<(usize, usize)>> {
-    let Some(crlf1) = find_crlf(src) else {
-        return Ok(None);
-    };
-    let chunk_len = &src[..crlf1];
-
-    let len_end = chunk_len.iter().position(|c| *c == b';').unwrap_or(crlf1);
-    let len_str = str::from_utf8(&src[..len_end])?;
-    let len = usize::from_str_radix(len_str, 16)?;
-
-    // We read an entire chunk at a time.
-    let required_input = crlf1 + 2 + len + 2;
-
-    // Check there is enough length in input and output for the entire chunk.
-    if src.len() < required_input || dst.len() < len {
-        return Ok(None);
-    }
-
-    // Double check the input ends \r\n.
-    if src[required_input - 2] != b'\r' || src[required_input - 1] != b'\n' {
-        return Err(HootError::IncorrectChunk);
-    }
-
-    let from = {
-        let x = &src[crlf1 + 2..];
-        &x[..len]
-    };
-
-    (&mut dst[..len]).copy_from_slice(from);
-
-    Ok(Some((required_input, len)))
 }
 
 struct BodyBit<'b> {

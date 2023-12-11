@@ -3,6 +3,8 @@
 // For tests we use std.
 #![cfg_attr(not(test), no_std)]
 
+mod chunk;
+
 mod out;
 mod util;
 
