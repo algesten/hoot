@@ -20,7 +20,7 @@ mod req;
 pub use req::{Output, Request, ResumeToken};
 
 mod res;
-pub use res::{Response, Status};
+pub use res::{BodyPart, Response, Status};
 
 // Re-export this
 pub use httparse::Header;
