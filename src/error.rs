@@ -78,6 +78,9 @@ pub enum HootError {
 
     /// Invalid byte in HTTP version.
     Version,
+
+    /// Did not read body to finish.
+    BodyNotFinished,
 }
 
 pub(crate) static OVERFLOW: Result<()> = Err(HootError::OutputOverflow);

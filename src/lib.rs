@@ -54,14 +54,14 @@ mod test {
 
         // ************* GET REQUEST *****************
 
-        // Request::new starts a new request. The buffer can be on the stack, heap or anywe you want.
+        // Request::new starts a new request. The buffer can be on the stack, heap or anywhere you want.
         // It is borrowed until we call .flush().
         let output = Request::new(&mut buf)
             // First we select if this is HTTP/1.0 or HTTP/1.1
             .http_11()
-            // Then comes the verb (method) + PATH. The methods are narrowed by the typo only be
-            // valid for HTTP/1.0. This writes to the underlying buffer – hence the Res return in
-            // case buffer overflows.
+            // Then comes the verb (method) + host and path. The methods are narrowed by http11 to
+            // only be valid for HTTP/1.1. This writes to the underlying buffer – hence the result
+            // return in case buffer overflows.
             .get("myhost.test:8080", "/some-path")?
             // At any point we can release the buffer. This returns `Output`, which we need to
             // write to the underlying transport.
@@ -74,12 +74,12 @@ mod test {
         assert_eq!(output.as_bytes(), EXPECTED_LINE);
 
         // Once we have written the output to the underlying transport, we call `ready()`, to
-        // get a state we can resume.
+        // get a "resumt token" we can resume the request from. This releases the borrowed buffer.
         let state = output.ready();
 
         // ************* SEND HEADERS *****************
 
-        // `Request::resume` takes the state and continues where we left off before calling `.flush()`.
+        // `Request::resume` takes the resume token and continues where we left off before calling `.flush()`.
         // The buffer to borrow can be the same we used initially or not. Subsequent output is
         // written to this buffer.
         let output = Request::resume(state, &mut buf)
@@ -88,7 +88,7 @@ mod test {
             .header("x-my-thing", "martin")?
             // Finish writes the header end into the buffer and transitions the state to expect
             // response input.
-            // The `.finish()` call is only available for HTTP verbs that have no body.
+            // The `.send()` call is only available for HTTP verbs that have no body.
             .send()?
             // Again, release the buffer to write to a transport.
             .flush();
@@ -97,34 +97,104 @@ mod test {
 
         assert_eq!(&*output, EXPECTED_HEADERS);
 
+        // Free the buffer.
+        let resume = output.ready();
+
         // ************* READ STATUS LINE *****************
 
-        //  Response from the resume token.
-        let response = output.ready().into_response();
+        // After calling `send()` above, the resume token can now be converted into a response
+        let response = resume.into_response();
 
-        // Try read incomplete input.
+        // Try read incomplete input. The provided buffer is required to parse response headers.
+        // The buffer can be the same as in the request or another one.
         let attempt = response.try_read_response(b"HTTP/1.", &mut buf)?;
-        assert!(!attempt.success());
+        assert!(!attempt.is_success());
 
         // Get the Response back from an failed attempt. unwrap_retry() will
-        // definitely work since !attempt.success()
+        // definitely work since !attempt.success(). This releases the borrowed buffer.
         let response = attempt.next().unwrap_retry();
 
-        // Try read complete input
-        let attempt =
-            response.try_read_response(b"HTTP/1.1 200 OK\r\nHost: foo\r\n\r\n", &mut buf)?;
-        assert!(attempt.success());
+        const COMPLETE: &[u8] = b"HTTP/1.1 200 OK\r\nHost: foo\r\nContent-Length: 10\r\n\r\n";
 
-        // Status line information.
+        // Try read complete input (and succeed). Borrow the buffer again.
+        let attempt = response.try_read_response(COMPLETE, &mut buf)?;
+        assert!(attempt.is_success());
+
+        // Read status line information.
         let status = attempt.status().unwrap();
         assert_eq!(status.version(), HttpVersion::Http11);
         assert_eq!(status.code(), 200);
         assert_eq!(status.text(), "OK");
 
-        // Headers
+        // Read headers.
         let headers = attempt.headers().unwrap();
         assert_eq!(headers[0].name, "Host");
         assert_eq!(headers[0].value, b"foo");
+        assert_eq!(headers[1].name, "Content-Length");
+        assert_eq!(headers[1].value, b"10");
+
+        // If we're uncertain whether the response contains a body or not, we can either match on an enum
+        // or use `has_body`. This releases the borrowed buffer.
+        let next = attempt.next();
+
+        // Example of how to match the enum to decide whether there is a body.
+        // match next {
+        //     res::AttemptNext::Retry(_) => {
+        //         // Since we checked `is_success()` above, we cannot get a retry.
+        //         unreachable!()
+        //     }
+        //     res::AttemptNext::Body(_response) => {
+        //         // Handle response with body.
+        //     }
+        //     res::AttemptNext::NoBody(_response) => {
+        //         // Handle response without body.
+        //     }
+        // }
+
+        // Another way of checking if there is a body.
+        assert!(next.has_body());
+
+        // We know there is a body. This doesn't fail.
+        let response = next.unwrap_body();
+
+        const ENTIRE_BODY: &[u8] = b"Is a body!";
+
+        // We can read a partial body. Depending on headers this can either be delimited by
+        // Content-Length, or use Transfer-Encoding: chunked. The response keeps track of
+        // how much data we read. The buffer is borrowed for the lifetime of the returned
+        let part = response.read_body(&ENTIRE_BODY[0..5], &mut buf)?;
+
+        // Check how much of the input was used. This might not be the entire available input.
+        // In this case it is though.
+        assert_eq!(part.input_used(), 5);
+
+        // The response body is not finished, since we got a content-length of 10 and we read 5.
+        assert!(!part.is_finished());
+
+        // The read/decoded output is inside the part.
+        assert_eq!(part.output(), b"Is a ");
+
+        // Release the borrowed buffer and continue reading the body.
+        let response = part.next();
+
+        // Read the rest. This again borrows the buffer.
+        let part = response.read_body(&ENTIRE_BODY[5..], &mut buf)?;
+
+        // Content is now 10, fulfilling the content-length buffer.
+        assert!(part.is_finished());
+
+        // The read/decoded output.
+        assert_eq!(part.output(), b"body!");
+
+        // Release the borrowed buffer and continue reading the body.
+        let response = part.next();
+
+        // Should be finished now.
+        assert!(response.is_finished());
+
+        // Consider the body reading finished. Returns an error if we call this too early,
+        // i.e. if we have not read to finish, and response.is_finished() is false.
+        response.finish()?;
 
         Ok(())
     }

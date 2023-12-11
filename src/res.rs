@@ -81,7 +81,7 @@ impl<'a, 'b> ResponseAttempt<'a, 'b> {
         }
     }
 
-    pub fn success(&self) -> bool {
+    pub fn is_success(&self) -> bool {
         self.success
     }
 
@@ -138,6 +138,14 @@ impl AttemptNext {
         };
         r
     }
+
+    pub fn is_success(&self) -> bool {
+        !matches!(self, AttemptNext::Retry(_))
+    }
+
+    pub fn has_body(&self) -> bool {
+        matches!(self, AttemptNext::Body(_))
+    }
 }
 
 impl Response<RECV_RESPONSE> {
@@ -187,33 +195,34 @@ impl Response<RECV_RESPONSE> {
 }
 
 impl Response<RECV_BODY> {
-    pub fn read_body<'a, 'b>(
-        &mut self,
-        src: &'a [u8],
-        dst: &'b mut [u8],
-    ) -> Result<ReadResult<'b>> {
+    pub fn read_body<'a, 'b>(mut self, src: &'a [u8], dst: &'b mut [u8]) -> Result<BodyPart<'b>> {
         // If we already read to completion, do not use any more input.
         if self.state.did_read_to_end {
-            return Ok(ReadResult {
+            return Ok(BodyPart {
+                response: self,
                 input_used: 0,
                 output: &[],
-                complete: true,
+                finished: true,
             });
         }
 
         // unwrap is ok because we can't be in state RECV_BODY without setting it.
-        let ret = match self.state.recv_body_mode.unwrap() {
+        let bit = match self.state.recv_body_mode.unwrap() {
             RecvBodyMode::LengthDelimited(_) => self.read_limit(src, dst, true),
             RecvBodyMode::Chunked => read_chunked(src, dst),
             RecvBodyMode::CloseDelimited => self.read_limit(src, dst, false),
-        };
+        }?;
 
-        let complete = ret.as_ref().map(|r| r.complete).unwrap_or(false);
-        if complete {
+        if bit.finished {
             self.state.did_read_to_end = true;
         }
 
-        ret
+        Ok(BodyPart {
+            response: self,
+            input_used: bit.input_used,
+            output: bit.output,
+            finished: bit.finished,
+        })
     }
 
     fn read_limit<'a, 'b>(
@@ -221,7 +230,7 @@ impl Response<RECV_BODY> {
         src: &'a [u8],
         dst: &'b mut [u8],
         use_checker: bool,
-    ) -> Result<ReadResult<'b>> {
+    ) -> Result<BodyBit<'b>> {
         let input_used = src.len().min(dst.len());
 
         let mut complete = false;
@@ -233,31 +242,33 @@ impl Response<RECV_BODY> {
 
         let output = &mut dst[..input_used];
         output.copy_from_slice(&src[..input_used]);
-        Ok(ReadResult {
+        Ok(BodyBit {
             input_used,
             output,
-            complete: complete,
+            finished: complete,
         })
     }
 
-    pub fn complete(self) -> Result<Response<ENDED>> {
+    pub fn is_finished(&self) -> bool {
+        let mode = self.state.recv_body_mode.unwrap();
+        let close_delimited = matches!(mode, RecvBodyMode::CloseDelimited);
+        !close_delimited && self.state.did_read_to_end
+    }
+
+    pub fn finish(self) -> Result<Response<ENDED>> {
         if let Some(checker) = &self.state.recv_checker {
             checker.assert_expected(HootError::RecvLessThanContentLength)?;
         }
 
-        // unwrap is ok because body mode must be set by now.
-        let mode = self.state.recv_body_mode.unwrap();
-        let read_to_close = matches!(mode, RecvBodyMode::CloseDelimited);
-
-        if !read_to_close && !self.state.did_read_to_end {
-            return Err(HootError::TooManyHeaders);
+        if !self.is_finished() {
+            return Err(HootError::BodyNotFinished);
         }
 
         Ok(self.transition())
     }
 }
 
-fn read_chunked<'a, 'b>(src: &'a [u8], dst: &'b mut [u8]) -> Result<ReadResult<'b>> {
+fn read_chunked<'a, 'b>(src: &'a [u8], dst: &'b mut [u8]) -> Result<BodyBit<'b>> {
     let mut index_in = 0;
     let mut index_out = 0;
     let mut complete = false;
@@ -272,10 +283,10 @@ fn read_chunked<'a, 'b>(src: &'a [u8], dst: &'b mut [u8]) -> Result<ReadResult<'
         index_out += len_out;
     }
 
-    Ok(ReadResult {
+    Ok(BodyBit {
         input_used: index_in,
         output: &dst[..index_out],
-        complete: complete,
+        finished: complete,
     })
 }
 
@@ -312,13 +323,20 @@ fn read_chunk(src: &[u8], dst: &mut [u8]) -> Result<Option<(usize, usize)>> {
     Ok(Some((required_input, len)))
 }
 
-pub struct ReadResult<'b> {
+struct BodyBit<'b> {
     input_used: usize,
     output: &'b [u8],
-    complete: bool,
+    finished: bool,
 }
 
-impl ReadResult<'_> {
+pub struct BodyPart<'b> {
+    response: Response<RECV_BODY>,
+    input_used: usize,
+    output: &'b [u8],
+    finished: bool,
+}
+
+impl BodyPart<'_> {
     pub fn input_used(&self) -> usize {
         self.input_used
     }
@@ -327,8 +345,12 @@ impl ReadResult<'_> {
         &*self.output
     }
 
-    pub fn complete(&self) -> bool {
-        self.complete
+    pub fn is_finished(&self) -> bool {
+        self.finished
+    }
+
+    pub fn next(self) -> Response<RECV_BODY> {
+        self.response
     }
 }
 
@@ -442,7 +464,7 @@ mod test {
         let r: Response<RECV_RESPONSE> = Response::new_test();
 
         let a = r.try_read_response(b"HTTP/1.1 404\r\n\r\n", &mut buf)?;
-        assert!(a.success());
+        assert!(a.is_success());
 
         let status = a.status().unwrap();
         assert_eq!(status, &Status(HttpVersion::Http11, 404, ""));
