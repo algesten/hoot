@@ -7,8 +7,8 @@ use httparse::Header;
 use crate::parser::find_crlf;
 use crate::req::CallState;
 use crate::util::{cast_buf_for_headers, compare_lowercase_ascii, LengthChecker};
-use crate::vars::private::*;
 use crate::vars::state::*;
+use crate::vars::{private::*, M};
 use crate::{HootError, HttpVersion};
 use crate::{Result, ResumeToken};
 
@@ -31,7 +31,7 @@ impl Response<()> {
             _typ: PhantomData,
             state: CallState {
                 version: Some(HttpVersion::Http11),
-                head: Some(false),
+                method: Some(M::GET),
                 ..Default::default()
             },
         }
@@ -172,8 +172,8 @@ impl Response<RECV_RESPONSE> {
 
         // Derive body mode from knowledge this far.
         let http10 = ver == HttpVersion::Http10;
-        let head = self.state.head.unwrap(); // Ok for same reason as above.
-        let mode = RecvBodyMode::from(http10, head, status.1, &r.headers)?;
+        let method = self.state.method.unwrap(); // Ok for same reason as above.
+        let mode = RecvBodyMode::from(http10, method, status.1, &r.headers)?;
 
         // If we are awaiting a length, put a length checker in place
         if let RecvBodyMode::LengthDelimited(len) = mode {
@@ -366,21 +366,22 @@ pub enum RecvBodyMode {
 }
 
 impl RecvBodyMode {
-    pub fn from(
-        http10: bool,
-        head: bool,
-        status_code: u16,
-        headers: &[Header<'_>],
-    ) -> Result<Self> {
+    pub fn from(http10: bool, method: M, status_code: u16, headers: &[Header<'_>]) -> Result<Self> {
+        let is_success = status_code >= 200 && status_code <= 299;
+        let is_informational = status_code >= 100 && status_code <= 199;
+
         let has_no_body =
             // https://datatracker.ietf.org/doc/html/rfc2616#section-4.3
             // All responses to the HEAD request method
             // MUST NOT include a message-body, even though the presence of entity-
             // header fields might lead one to believe they do.
-            head ||
+            method == M::HEAD ||
+            // A client MUST ignore any Content-Length or Transfer-Encoding
+            // header fields received in a successful response to CONNECT.
+            is_success && method == M::CONNECT ||
             // All 1xx (informational), 204 (no content), and 304 (not modified) responses
             // MUST NOT include a message-body.
-            status_code >= 100 && status_code <= 199 ||
+            is_informational ||
             matches!(status_code, 204 | 304);
 
         if has_no_body {

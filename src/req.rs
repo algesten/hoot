@@ -8,11 +8,11 @@ use crate::out::{Out, Writer};
 use crate::parser::parse_headers;
 use crate::res::RecvBodyMode;
 use crate::util::{compare_lowercase_ascii, LengthChecker};
-use crate::vars::body::*;
 use crate::vars::method::*;
 use crate::vars::private::*;
 use crate::vars::state::*;
 use crate::vars::version::*;
+use crate::vars::{body::*, M};
 use crate::{HootError, Result};
 use crate::{HttpVersion, Response};
 
@@ -34,7 +34,7 @@ struct Typ<S: State, V: Version, M: Method, B: BodyType>(
 #[derive(Default)]
 pub(crate) struct CallState {
     pub version: Option<HttpVersion>,
-    pub head: Option<bool>,
+    pub method: Option<M>,
     pub send_checker: Option<LengthChecker>,
     pub recv_body_mode: Option<RecvBodyMode>,
     pub recv_checker: Option<LengthChecker>,
@@ -174,7 +174,7 @@ macro_rules! write_line_10 {
             path: &str,
         ) -> Result<Request<'a, SEND_HEADERS, HTTP_10, $meth_up, ()>> {
             write_line_10(self.out.writer(), stringify!($meth_up), path)?;
-            self.state.head = Some($meth_up::head());
+            self.state.method = Some(M::$meth_up);
             Ok(self.transition())
         }
     };
@@ -194,7 +194,7 @@ macro_rules! write_line_11 {
             path: &str,
         ) -> Result<Request<'a, SEND_HEADERS, HTTP_11, $meth_up, ()>> {
             write_line_11(self.out.writer(), stringify!($meth_up), host, path)?;
-            self.state.head = Some($meth_up::head());
+            self.state.method = Some(M::$meth_up);
             Ok(self.transition())
         }
     };
@@ -218,9 +218,10 @@ impl<'a> Request<'a, SEND_LINE, HTTP_11, (), ()> {
     write_line_11!(post, POST);
     write_line_11!(put, PUT);
     write_line_11!(delete, DELETE);
-    // CONNECT
+    write_line_11!(connect, CONNECT);
     write_line_11!(options, OPTIONS);
     write_line_11!(trace, TRACE);
+    write_line_11!(patch, PATCH);
 }
 
 impl<'a, M: Method, V: Version> Request<'a, SEND_HEADERS, V, M, ()> {
@@ -460,7 +461,7 @@ mod std_impls {
     impl fmt::Debug for CallState {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             f.debug_struct("CallState")
-                .field("head", &self.head)
+                .field("method", &self.method)
                 .field("send_checker", &self.send_checker)
                 .field("recv_body_mode", &self.recv_body_mode)
                 .field("recv_checker", &self.recv_checker)

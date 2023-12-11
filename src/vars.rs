@@ -30,6 +30,19 @@ pub mod method {
     pub struct PATCH;
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum M {
+    OPTIONS,
+    GET,
+    POST,
+    PUT,
+    DELETE,
+    HEAD,
+    TRACE,
+    CONNECT,
+    PATCH,
+}
+
 #[allow(non_camel_case_types)]
 pub mod body {
     pub struct BODY_LENGTH;
@@ -49,7 +62,10 @@ pub(crate) mod private {
         fn version() -> HttpVersion;
     }
     pub trait Method {
-        fn head() -> bool {
+        fn is_head() -> bool {
+            false
+        }
+        fn is_connect() -> bool {
             false
         }
     }
@@ -89,12 +105,16 @@ pub(crate) mod private {
     impl Method for PUT {}
     impl Method for DELETE {}
     impl Method for HEAD {
-        fn head() -> bool {
+        fn is_head() -> bool {
             true
         }
     }
     impl Method for TRACE {}
-    impl Method for CONNECT {}
+    impl Method for CONNECT {
+        fn is_connect() -> bool {
+            true
+        }
+    }
     impl Method for PATCH {}
 
     pub trait MethodWithBody: Method {}
@@ -108,14 +128,33 @@ pub(crate) mod private {
     impl MethodWithoutBody for GET {}
     impl MethodWithoutBody for DELETE {}
     impl MethodWithoutBody for HEAD {}
-    impl MethodWithoutBody for TRACE {}
-
-    pub trait MethodConnect: MethodWithoutBody {}
     impl MethodWithoutBody for CONNECT {}
-    impl MethodConnect for CONNECT {}
+    impl MethodWithoutBody for TRACE {}
 
     pub trait BodyType {}
     impl BodyType for () {}
     impl BodyType for BODY_LENGTH {}
     impl BodyType for BODY_CHUNKED {}
+}
+
+#[cfg(any(std, test))]
+mod std_impls {
+    use super::*;
+    use std::fmt;
+
+    impl fmt::Debug for M {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                Self::OPTIONS => write!(f, "OPTIONS"),
+                Self::GET => write!(f, "GET"),
+                Self::POST => write!(f, "POST"),
+                Self::PUT => write!(f, "PUT"),
+                Self::DELETE => write!(f, "DELETE"),
+                Self::HEAD => write!(f, "HEAD"),
+                Self::TRACE => write!(f, "TRACE"),
+                Self::CONNECT => write!(f, "CONNECT"),
+                Self::PATCH => write!(f, "PATCH"),
+            }
+        }
+    }
 }
