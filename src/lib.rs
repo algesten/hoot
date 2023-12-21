@@ -105,16 +105,12 @@ mod test {
         // ************* READ STATUS LINE *****************
 
         // After calling `send()` above, the resume token can now be converted into a response
-        let response = resume.into_response();
+        let mut response = resume.into_response();
 
         // Try read incomplete input. The provided buffer is required to parse response headers.
         // The buffer can be the same as in the request or another one.
         let attempt = response.try_read_response(b"HTTP/1.", &mut buf)?;
         assert!(!attempt.is_success());
-
-        // Get the Response back from an failed attempt. unwrap_retry() will
-        // definitely work since !attempt.success(). This releases the borrowed buffer.
-        let response = attempt.next().unwrap_retry();
 
         const COMPLETE: &[u8] = b"HTTP/1.1 200 OK\r\nHost: foo\r\nContent-Length: 10\r\n\r\n";
 
@@ -135,29 +131,8 @@ mod test {
         assert_eq!(headers[1].name, "Content-Length");
         assert_eq!(headers[1].value, b"10");
 
-        // If we're uncertain whether the response contains a body or not, we can either match on an enum
-        // or use `has_body`. This releases the borrowed buffer.
-        let next = attempt.next();
-
-        // Example of how to match the enum to decide whether there is a body.
-        // match next {
-        //     res::AttemptNext::Retry(_) => {
-        //         // Since we checked `is_success()` above, we cannot get a retry.
-        //         unreachable!()
-        //     }
-        //     res::AttemptNext::Body(_response) => {
-        //         // Handle response with body.
-        //     }
-        //     res::AttemptNext::NoBody(_response) => {
-        //         // Handle response without body.
-        //     }
-        // }
-
-        // Another way of checking if there is a body.
-        assert!(next.has_body());
-
-        // We know there is a body. This doesn't fail.
-        let response = next.unwrap_body();
+        // Once done with status and headers we proceed to reading the body.
+        let mut response = response.proceed();
 
         const ENTIRE_BODY: &[u8] = b"Is a body!";
 
@@ -176,9 +151,6 @@ mod test {
         // The read/decoded output is inside the part.
         assert_eq!(part.output(), b"Is a ");
 
-        // Release the borrowed buffer and continue reading the body.
-        let response = part.next();
-
         // Read the rest. This again borrows the buffer.
         let part = response.read_body(&ENTIRE_BODY[5..], &mut buf)?;
 
@@ -187,9 +159,6 @@ mod test {
 
         // The read/decoded output.
         assert_eq!(part.output(), b"body!");
-
-        // Release the borrowed buffer and continue reading the body.
-        let response = part.next();
 
         // Should be finished now.
         assert!(response.is_finished());

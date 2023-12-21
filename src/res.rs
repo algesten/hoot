@@ -43,10 +43,60 @@ impl<S: State> Response<S> {
         // SAFETY: this only changes the type state of the PhantomData
         unsafe { mem::transmute(self) }
     }
+
+    fn do_try_read_response<'a, 'b>(
+        &mut self,
+        input: &'a [u8],
+        buf: &'b mut [u8],
+    ) -> Result<ResponseAttempt<'a, 'b>> {
+        let already_read_response = self.state.recv_body_mode.is_some();
+
+        // Status/header reads only work once.
+        if already_read_response {
+            return Ok(ResponseAttempt::empty());
+        }
+
+        let headers = cast_buf_for_headers(buf)?;
+        let mut r = httparse::Response::new(headers);
+
+        let n = match r.parse(input)? {
+            httparse::Status::Complete(v) => v,
+            httparse::Status::Partial => return Ok(ResponseAttempt::empty()),
+        };
+
+        let ver = match r.version.unwrap() {
+            0 => HttpVersion::Http10,
+            1 => HttpVersion::Http11,
+            _ => return Err(HootError::Version),
+        };
+
+        let status = Status(ver, r.code.unwrap(), r.reason.unwrap_or(""));
+
+        // Derive body mode from knowledge this far.
+        let http10 = ver == HttpVersion::Http10;
+        let method = self.state.method.unwrap(); // Ok for same reason as above.
+        let mode = RecvBodyMode::from(http10, method, status.1, &r.headers)?;
+
+        // If we are awaiting a length, put a length checker in place
+        if let RecvBodyMode::LengthDelimited(len) = mode {
+            if len > 0 {
+                self.state.recv_checker = Some(LengthChecker::new(len));
+            }
+        }
+
+        // Remember the body mode
+        self.state.recv_body_mode = Some(mode);
+
+        Ok(ResponseAttempt {
+            success: true,
+            input_used: n,
+            status: Some(status),
+            headers: Some(r.headers),
+        })
+    }
 }
 
 pub struct ResponseAttempt<'a, 'b> {
-    response: Response<RECV_RESPONSE>,
     success: bool,
     input_used: usize,
     status: Option<Status<'a>>,
@@ -71,9 +121,8 @@ impl Status<'_> {
 }
 
 impl<'a, 'b> ResponseAttempt<'a, 'b> {
-    fn incomplete(response: Response<RECV_RESPONSE>) -> Self {
+    const fn empty() -> Self {
         ResponseAttempt {
-            response,
             success: false,
             input_used: 0,
             status: None,
@@ -96,114 +145,41 @@ impl<'a, 'b> ResponseAttempt<'a, 'b> {
     pub fn headers(&self) -> Option<&'b [Header<'a>]> {
         self.headers
     }
-
-    pub fn next(self) -> AttemptNext {
-        if !self.success {
-            AttemptNext::Retry(self.response.transition())
-        } else {
-            match self.response.state.recv_body_mode.unwrap() {
-                RecvBodyMode::LengthDelimited(v) if v == 0 => {
-                    AttemptNext::NoBody(self.response.transition())
-                }
-                _ => AttemptNext::Body(self.response.transition()),
-            }
-        }
-    }
-}
-
-pub enum AttemptNext {
-    Retry(Response<RECV_RESPONSE>),
-    Body(Response<RECV_BODY>),
-    NoBody(Response<ENDED>),
-}
-
-impl AttemptNext {
-    pub fn unwrap_retry(self) -> Response<RECV_RESPONSE> {
-        let AttemptNext::Retry(r) = self else {
-            panic!("unwrap_no_body when AttemptNext isnt Retry");
-        };
-        r
-    }
-
-    pub fn unwrap_body(self) -> Response<RECV_BODY> {
-        let AttemptNext::Body(r) = self else {
-            panic!("unwrap_no_body when AttemptNext isnt Body");
-        };
-        r
-    }
-
-    pub fn unwrap_no_body(self) -> Response<ENDED> {
-        let AttemptNext::NoBody(r) = self else {
-            panic!("unwrap_no_body when AttemptNext isnt NoBody");
-        };
-        r
-    }
-
-    pub fn is_success(&self) -> bool {
-        !matches!(self, AttemptNext::Retry(_))
-    }
-
-    pub fn has_body(&self) -> bool {
-        matches!(self, AttemptNext::Body(_))
-    }
 }
 
 impl Response<RECV_RESPONSE> {
     pub fn try_read_response<'a, 'b>(
-        mut self,
+        &mut self,
         input: &'a [u8],
         buf: &'b mut [u8],
     ) -> Result<ResponseAttempt<'a, 'b>> {
-        let headers = cast_buf_for_headers(buf)?;
-        let mut r = httparse::Response::new(headers);
+        self.do_try_read_response(input, buf)
+    }
 
-        let n = match r.parse(input)? {
-            httparse::Status::Complete(v) => v,
-            httparse::Status::Partial => return Ok(ResponseAttempt::incomplete(self)),
-        };
-
-        let ver = match r.version.unwrap() {
-            0 => HttpVersion::Http10,
-            1 => HttpVersion::Http11,
-            _ => return Err(HootError::Version),
-        };
-
-        let status = Status(ver, r.code.unwrap(), r.reason.unwrap_or(""));
-
-        // Derive body mode from knowledge this far.
-        let http10 = ver == HttpVersion::Http10;
-        let method = self.state.method.unwrap(); // Ok for same reason as above.
-        let mode = RecvBodyMode::from(http10, method, status.1, &r.headers)?;
-
-        // If we are awaiting a length, put a length checker in place
-        if let RecvBodyMode::LengthDelimited(len) = mode {
-            if len > 0 {
-                self.state.recv_checker = Some(LengthChecker::new(len));
-            }
-        }
-
-        // Remember te body mode
-        self.state.recv_body_mode = Some(mode);
-        Ok(ResponseAttempt {
-            response: self,
-            success: true,
-            input_used: n,
-            status: Some(status),
-            headers: Some(r.headers),
-        })
+    pub fn proceed(self) -> Response<RECV_BODY> {
+        self.transition()
     }
 }
 
 impl Response<RECV_BODY> {
-    pub fn read_body<'a, 'b>(mut self, src: &'a [u8], dst: &'b mut [u8]) -> Result<BodyPart<'b>> {
+    pub fn read_body<'a, 'b>(&mut self, src: &'a [u8], dst: &'b mut [u8]) -> Result<BodyPart<'b>> {
+        let already_read_response = self.state.recv_body_mode.is_some();
+
+        // It's valid to skip try_read_response() and progress straight to reading
+        // the body. This ensures we skip the corresponding input.
+        if !already_read_response {
+            let r = self.do_try_read_response(src, dst)?;
+
+            // Still not enough input for the entire status and headers. Need
+            // to try again later.
+            if !r.success {
+                return Ok(BodyPart::empty());
+            }
+        }
+
         // If we already read to completion, do not use any more input.
         if self.state.did_read_to_end {
-            return Ok(BodyPart {
-                response: self,
-                input_used: 0,
-                output: &[],
-                finished: true,
-            });
+            return Ok(BodyPart::empty());
         }
 
         // unwrap is ok because we can't be in state RECV_BODY without setting it.
@@ -218,7 +194,6 @@ impl Response<RECV_BODY> {
         }
 
         Ok(BodyPart {
-            response: self,
             input_used: bit.input_used,
             output: bit.output,
             finished: bit.finished,
@@ -233,11 +208,11 @@ impl Response<RECV_BODY> {
     ) -> Result<BodyBit<'b>> {
         let input_used = src.len().min(dst.len());
 
-        let mut complete = false;
+        let mut finished = false;
         if use_checker {
             let checker = self.state.recv_checker.as_mut().unwrap();
             checker.append(input_used, HootError::RecvMoreThanContentLength)?;
-            complete = checker.complete();
+            finished = checker.complete();
         }
 
         let output = &mut dst[..input_used];
@@ -245,7 +220,7 @@ impl Response<RECV_BODY> {
         Ok(BodyBit {
             input_used,
             output,
-            finished: complete,
+            finished,
         })
     }
 
@@ -292,13 +267,20 @@ struct BodyBit<'b> {
 }
 
 pub struct BodyPart<'b> {
-    response: Response<RECV_BODY>,
     input_used: usize,
     output: &'b [u8],
     finished: bool,
 }
 
 impl BodyPart<'_> {
+    fn empty() -> Self {
+        BodyPart {
+            input_used: 0,
+            output: &[],
+            finished: false,
+        }
+    }
+
     pub fn input_used(&self) -> usize {
         self.input_used
     }
@@ -309,10 +291,6 @@ impl BodyPart<'_> {
 
     pub fn is_finished(&self) -> bool {
         self.finished
-    }
-
-    pub fn next(self) -> Response<RECV_BODY> {
-        self.response
     }
 }
 
@@ -424,7 +402,7 @@ mod test {
     #[test]
     fn test_recv_no_headers() -> Result<()> {
         let mut buf = [0; 1024];
-        let r: Response<RECV_RESPONSE> = Response::new_test();
+        let mut r: Response<RECV_RESPONSE> = Response::new_test();
 
         let a = r.try_read_response(b"HTTP/1.1 404\r\n\r\n", &mut buf)?;
         assert!(a.is_success());

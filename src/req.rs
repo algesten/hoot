@@ -467,7 +467,7 @@ mod std_impls {
                 .field("send_checker", &self.send_checker)
                 .field("recv_body_mode", &self.recv_body_mode)
                 .field("recv_checker", &self.recv_checker)
-                .field("body_complete", &self.did_read_to_end)
+                .field("did_read_to_end", &self.did_read_to_end)
                 .finish()
         }
     }
