@@ -56,7 +56,7 @@ impl<S: State> Response<S> {
             return Ok(ResponseAttempt::empty());
         }
 
-        let headers = cast_buf_for_headers(buf)?;
+        let headers = cast_buf_for_headers(buf);
         let mut r = httparse::Response::new(headers);
 
         let n = match r.parse(input)? {

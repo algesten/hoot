@@ -1,6 +1,4 @@
-use core::mem::align_of;
-use core::mem::size_of;
-
+use core::mem;
 use httparse::{Header, EMPTY_HEADER};
 
 use crate::{HootError, Result};
@@ -9,43 +7,34 @@ use crate::{HootError, Result};
 const MAX_HEADERS: usize = 100;
 
 /// Use a generic byte buffer to write httparse Header.
-// TODO: Are these lifetimes ok?
-pub(crate) fn cast_buf_for_headers<'a, 'b>(buf: &'a mut [u8]) -> Result<&'a mut [Header<'b>]> {
-    let byte_len = buf.len();
+pub(crate) fn cast_buf_for_headers<'a, 'b>(buf: &'a mut [u8]) -> &'a mut [Header<'b>] {
+    // SAFETY: align_to_mut docs say "This method is essentially a transmute with
+    // respect to the elements in the returned middle slice". Transmute further
+    // says that "..the result must be _valid_ at their given type". The "valid"
+    // word means that we can't have data, even temporarily, that is not correct.
+    //
+    // Header contains a &str and &[u8] and &str must never be made to exist while
+    // pointing to garbage data (which the incoming buf might have).
+    //
+    // This situation is similar to the example "Initializing an array element-by-element"
+    // https://doc.rust-lang.org/core/mem/union.MaybeUninit.html#initializing-an-array-element-by-element
+    //
+    // By transmuting to MaybeUninit<Header<'b>>, we can initialize the data safely
+    // before transmuting to our final result.
+    let (_, mut headers, _) = unsafe { buf.align_to_mut::<mem::MaybeUninit<Header<'b>>>() };
 
-    // The alignment of Header
-    let align = align_of::<httparse::Header>();
-
-    // Treat buffer as a pointer to some memory.
-    let ptr = buf.as_mut_ptr() as *mut u8;
-
-    // The amount of offset needed to be aligned.
-    let offset = ptr.align_offset(align);
-
-    if offset >= byte_len {
-        return Err(HootError::InsufficientSpaceToParseHeaders);
+    if headers.len() > MAX_HEADERS {
+        let max = headers.len().min(MAX_HEADERS);
+        headers = &mut headers[..max];
     }
 
-    // The number of Header elements we can fit in the buffer.
-    let space_for = (byte_len - offset) / size_of::<httparse::Header>();
+    // This is the point of using MaybeUninit.
+    for header in &mut *headers {
+        header.write(EMPTY_HEADER);
+    }
 
-    // In case we got crazy big memory.
-    let len = space_for.min(MAX_HEADERS);
-
-    // Move pointer to alignment
-    // SAFETY: We checked above that this is within bounds.
-    let ptr = unsafe { ptr.add(offset) };
-
-    // SAFETY: We checked alignment and how many headers we can fit once aligned.
-    // TODO: I'm uncertain of my use of unsafe here.
-    let header_buf = unsafe { core::slice::from_raw_parts_mut(ptr as *mut Header, len) };
-
-    // SAFETY: ptr+len is not unitialized memory (since it came from a valid
-    // &mut [u8] slice, however it also doesn't have correct data for Header.
-    // This might be naive, but I think we can fill the space with valid values this.
-    header_buf.fill(EMPTY_HEADER);
-
-    Ok(header_buf)
+    // SAFETY: See above rust doc link.
+    unsafe { mem::transmute(headers) }
 }
 
 pub(crate) fn compare_lowercase_ascii(a: &str, lowercased: &str) -> bool {

@@ -24,13 +24,6 @@ pub enum HootError {
     /// Parsed more headers than provided buffer can contain.
     TooManyHeaders,
 
-    /// Parsing headers (for sending or receiving) uses leftover space in the
-    /// buffer. This error means there was not enough "spare" space to parse
-    /// any headers.
-    ///
-    /// Call `.flush()`, write the output to the transport followed by `Call::resume()`.
-    InsufficientSpaceToParseHeaders,
-
     /// Encountered a forbidden header name.
     ///
     /// `content-length` and `transfer-encoding` must be set using

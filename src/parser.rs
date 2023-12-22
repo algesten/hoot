@@ -4,7 +4,7 @@ use crate::util::cast_buf_for_headers;
 use crate::{HootError, Result};
 
 pub(crate) fn parse_headers<'a, 'b>(src: &'a [u8], dst: &'b mut [u8]) -> Result<&'b [Header<'a>]> {
-    let hbuf = cast_buf_for_headers(dst)?;
+    let hbuf = cast_buf_for_headers(dst);
 
     // This parses into hbuf even if it fails due to an unfinished header line.
     let result = httparse::parse_headers(src, hbuf);
