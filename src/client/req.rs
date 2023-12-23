@@ -7,15 +7,17 @@ use crate::chunk::Dechunker;
 use crate::error::OVERFLOW;
 use crate::out::{Out, Writer};
 use crate::parser::parse_headers;
-use crate::res::RecvBodyMode;
 use crate::util::{compare_lowercase_ascii, LengthChecker};
 use crate::vars::method::*;
 use crate::vars::private::*;
 use crate::vars::state::*;
 use crate::vars::version::*;
 use crate::vars::{body::*, M};
+use crate::HttpVersion;
 use crate::{HootError, Result};
-use crate::{HttpVersion, Response};
+
+use super::res::RecvBodyMode;
+use super::Response;
 
 pub struct Request<'a, S: State, V: Version, M: Method, B: BodyType> {
     typ: Typ<S, V, M, B>,

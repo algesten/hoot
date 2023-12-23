@@ -4,12 +4,14 @@ use core::str;
 
 use crate::chunk::Dechunker;
 use crate::header::transmute_headers;
-use crate::req::CallState;
 use crate::util::{cast_buf_for_headers, compare_lowercase_ascii, LengthChecker};
 use crate::vars::state::*;
 use crate::vars::{private::*, M};
+use crate::Result;
 use crate::{Header, HootError, HttpVersion};
-use crate::{Result, ResumeToken};
+
+use super::req::CallState;
+use super::ResumeToken;
 
 pub struct Response<S: State> {
     _typ: PhantomData<S>,
