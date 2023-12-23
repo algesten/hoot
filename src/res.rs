@@ -2,14 +2,13 @@ use core::marker::PhantomData;
 use core::mem;
 use core::str;
 
-use httparse::Header;
-
 use crate::chunk::Dechunker;
+use crate::header::transmute_headers;
 use crate::req::CallState;
 use crate::util::{cast_buf_for_headers, compare_lowercase_ascii, LengthChecker};
 use crate::vars::state::*;
 use crate::vars::{private::*, M};
-use crate::{HootError, HttpVersion};
+use crate::{Header, HootError, HttpVersion};
 use crate::{Result, ResumeToken};
 
 pub struct Response<S: State> {
@@ -75,7 +74,8 @@ impl<S: State> Response<S> {
         // Derive body mode from knowledge this far.
         let http10 = ver == HttpVersion::Http10;
         let method = self.state.method.unwrap(); // Ok for same reason as above.
-        let mode = RecvBodyMode::from(http10, method, status.1, &r.headers)?;
+        let headers = transmute_headers(r.headers);
+        let mode = RecvBodyMode::from(http10, method, status.1, headers)?;
 
         // If we are awaiting a length, put a length checker in place
         if let RecvBodyMode::LengthDelimited(len) = mode {
@@ -91,7 +91,7 @@ impl<S: State> Response<S> {
             success: true,
             input_used: n,
             status: Some(status),
-            headers: Some(r.headers),
+            headers: Some(headers),
         })
     }
 }
@@ -335,15 +335,15 @@ impl RecvBodyMode {
         let mut chunked = false;
 
         for head in headers {
-            if compare_lowercase_ascii(head.name, "content-length") {
-                let v = str::from_utf8(head.value)?.parse::<u64>()?;
+            if compare_lowercase_ascii(head.name(), "content-length") {
+                let v = str::from_utf8(head.value_raw())?.parse::<u64>()?;
                 if content_length.is_some() {
                     return Err(HootError::DuplicateContentLength);
                 }
                 content_length = Some(v);
-            } else if !chunked && compare_lowercase_ascii(head.name, "transfer-encoding") {
+            } else if !chunked && compare_lowercase_ascii(head.name(), "transfer-encoding") {
                 // Header can repeat, stop looking if we found "chunked"
-                let s = str::from_utf8(head.value)?;
+                let s = str::from_utf8(head.value_raw())?;
                 chunked = s
                     .split(",")
                     .map(|v| v.trim())

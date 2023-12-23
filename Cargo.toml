@@ -5,7 +5,10 @@ edition = "2021"
 
 [features]
 default = []
-std = [] # to run tests
+std = []     # to run tests
 
 [dependencies]
 httparse = { version = "1.8.0", default-features = false }
+
+[dev-dependencies]
+memoffset = "0.9.0"

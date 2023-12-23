@@ -22,8 +22,8 @@ pub use req::{Output, Request, ResumeToken};
 mod res;
 pub use res::{BodyPart, Response, Status};
 
-// Re-export this
-pub use httparse::Header;
+mod header;
+pub use header::Header;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum HttpVersion {
@@ -126,10 +126,10 @@ mod test {
 
         // Read headers.
         let headers = attempt.headers().unwrap();
-        assert_eq!(headers[0].name, "Host");
-        assert_eq!(headers[0].value, b"foo");
-        assert_eq!(headers[1].name, "Content-Length");
-        assert_eq!(headers[1].value, b"10");
+        assert_eq!(headers[0].name(), "Host");
+        assert_eq!(headers[0].value(), "foo");
+        assert_eq!(headers[1].name(), "Content-Length");
+        assert_eq!(headers[1].value(), "10");
 
         // Once done with status and headers we proceed to reading the body.
         let mut response = response.proceed();
