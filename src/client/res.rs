@@ -2,8 +2,7 @@ use core::marker::PhantomData;
 use core::mem;
 use core::str;
 
-use crate::body::RecvBodyMode;
-use crate::chunk::Dechunker;
+use crate::body::{do_read_body, RecvBodyMode};
 use crate::header::transmute_headers;
 use crate::util::{cast_buf_for_headers, LengthChecker};
 use crate::vars::private::*;
@@ -92,7 +91,6 @@ impl<S: State> Response<S> {
         self.state.recv_body_mode = Some(mode);
 
         Ok(ResponseAttempt {
-            success: true,
             input_used: n,
             status: Some(status),
             headers: Some(headers),
@@ -101,7 +99,6 @@ impl<S: State> Response<S> {
 }
 
 pub struct ResponseAttempt<'a, 'b> {
-    success: bool,
     input_used: usize,
     status: Option<Status<'a>>,
     headers: Option<&'b [Header<'a>]>,
@@ -127,7 +124,6 @@ impl Status<'_> {
 impl<'a, 'b> ResponseAttempt<'a, 'b> {
     const fn empty() -> Self {
         ResponseAttempt {
-            success: false,
             input_used: 0,
             status: None,
             headers: None,
@@ -135,7 +131,7 @@ impl<'a, 'b> ResponseAttempt<'a, 'b> {
     }
 
     pub fn is_success(&self) -> bool {
-        self.success
+        self.input_used > 0
     }
 
     pub fn input_used(&self) -> usize {
@@ -176,73 +172,12 @@ impl Response<RECV_BODY> {
 
             // Still not enough input for the entire status and headers. Need
             // to try again later.
-            if !r.success {
+            if !r.is_success() {
                 return Ok(BodyPart::empty());
             }
         }
 
-        // If we already read to completion, do not use any more input.
-        if self.state.did_read_to_end {
-            return Ok(BodyPart::empty());
-        }
-
-        // unwrap is ok because we can't be in state RECV_BODY without setting it.
-        let bit = match self.state.recv_body_mode.unwrap() {
-            RecvBodyMode::LengthDelimited(_) => self.read_limit(src, dst, true),
-            RecvBodyMode::Chunked => self.read_chunked(src, dst),
-            RecvBodyMode::CloseDelimited => self.read_limit(src, dst, false),
-        }?;
-
-        if bit.finished {
-            self.state.did_read_to_end = true;
-        }
-
-        Ok(BodyPart {
-            input_used: bit.input_used,
-            output: bit.output,
-            finished: bit.finished,
-        })
-    }
-
-    fn read_limit<'a, 'b>(
-        &mut self,
-        src: &'a [u8],
-        dst: &'b mut [u8],
-        use_checker: bool,
-    ) -> Result<BodyPart<'b>> {
-        let input_used = src.len().min(dst.len());
-
-        let mut finished = false;
-        if use_checker {
-            let checker = self.state.recv_checker.as_mut().unwrap();
-            checker.append(input_used, HootError::RecvMoreThanContentLength)?;
-            finished = checker.complete();
-        }
-
-        let output = &mut dst[..input_used];
-        output.copy_from_slice(&src[..input_used]);
-        Ok(BodyPart {
-            input_used,
-            output,
-            finished,
-        })
-    }
-
-    fn read_chunked<'a>(&mut self, src: &[u8], dst: &'a mut [u8]) -> Result<BodyPart<'a>> {
-        if self.state.dechunker.is_none() {
-            self.state.dechunker = Some(Dechunker::new());
-        }
-        let dechunker = self.state.dechunker.as_mut().unwrap();
-        let (input_used, produced_output) = dechunker.parse_input(src, dst)?;
-
-        let output = &mut dst[..produced_output];
-        let finished = dechunker.is_ended();
-
-        Ok(BodyPart {
-            input_used,
-            output,
-            finished,
-        })
+        do_read_body(&mut self.state, src, dst)
     }
 
     pub fn is_finished(&self) -> bool {

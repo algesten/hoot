@@ -313,7 +313,7 @@ impl<'a, V: Version, M: MethodWithBody> Request<'a, SEND_BODY, V, M, BODY_LENGTH
         Ok(())
     }
 
-    pub fn complete(mut self) -> Result<Request<'a, ENDED, (), (), ()>> {
+    pub fn finish(mut self) -> Result<Request<'a, ENDED, (), (), ()>> {
         // This returns Err if we have written less than content-length.
         self.checker()
             .assert_expected(HootError::SentLessThanContentLength)?;
@@ -324,7 +324,7 @@ impl<'a, V: Version, M: MethodWithBody> Request<'a, SEND_BODY, V, M, BODY_LENGTH
 
 impl<'a, V: Version, M: MethodWithBody> Request<'a, SEND_BODY, V, M, BODY_CHUNKED> {
     pub fn write_chunk(&mut self, bytes: &[u8]) -> Result<()> {
-        // Writing no bytes is ok. Ending the chunk writing is by doing the complete() call.
+        // Writing no bytes is ok. Ending the chunk writing is by doing the finish() call.
         if bytes.is_empty() {
             return Ok(());
         }
@@ -353,7 +353,7 @@ impl<'a, V: Version, M: MethodWithBody> Request<'a, SEND_BODY, V, M, BODY_CHUNKE
         Ok(self.transition())
     }
 
-    pub fn complete(mut self) -> Result<Request<'a, ENDED, (), (), ()>> {
+    pub fn finish(mut self) -> Result<Request<'a, ENDED, (), (), ()>> {
         let mut w = self.out.writer();
         write!(w, "0\r\n\r\n").or(OVERFLOW)?;
         w.commit();
@@ -372,7 +372,7 @@ impl<'a, V: Version, M: MethodWithBody> Request<'a, SEND_TRAILER, V, M, ()> {
         self.header_raw(name, bytes, true)
     }
 
-    pub fn complete(mut self) -> Result<Request<'a, ENDED, (), (), ()>> {
+    pub fn finish(mut self) -> Result<Request<'a, ENDED, (), (), ()>> {
         let mut w = self.out.writer();
         write!(w, "\r\n").or(OVERFLOW)?;
         w.commit();

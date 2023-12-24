@@ -1,8 +1,78 @@
 use core::str;
 
+use crate::chunk::Dechunker;
 use crate::error::Result;
 use crate::util::compare_lowercase_ascii;
-use crate::{Header, HootError, Method};
+use crate::{CallState, Header, HootError, Method};
+
+pub fn do_read_body<'a, 'b>(
+    state: &mut CallState,
+    src: &'a [u8],
+    dst: &'b mut [u8],
+) -> Result<BodyPart<'b>> {
+    // If we already read to completion, do not use any more input.
+    if state.did_read_to_end {
+        return Ok(BodyPart::empty());
+    }
+
+    // unwrap is ok because we can't be in state RECV_BODY without setting it.
+    let bit = match state.recv_body_mode.unwrap() {
+        RecvBodyMode::LengthDelimited(_) => read_limit(state, src, dst, true),
+        RecvBodyMode::Chunked => read_chunked(state, src, dst),
+        RecvBodyMode::CloseDelimited => read_limit(state, src, dst, false),
+    }?;
+
+    if bit.finished {
+        state.did_read_to_end = true;
+    }
+
+    Ok(BodyPart {
+        input_used: bit.input_used,
+        output: bit.output,
+        finished: bit.finished,
+    })
+}
+
+fn read_limit<'a, 'b>(
+    state: &mut CallState,
+    src: &'a [u8],
+    dst: &'b mut [u8],
+    use_checker: bool,
+) -> Result<BodyPart<'b>> {
+    let input_used = src.len().min(dst.len());
+
+    let mut finished = false;
+    if use_checker {
+        let checker = state.recv_checker.as_mut().unwrap();
+        checker.append(input_used, HootError::RecvMoreThanContentLength)?;
+        finished = checker.complete();
+    }
+
+    let output = &mut dst[..input_used];
+    output.copy_from_slice(&src[..input_used]);
+    Ok(BodyPart {
+        input_used,
+        output,
+        finished,
+    })
+}
+
+fn read_chunked<'a>(state: &mut CallState, src: &[u8], dst: &'a mut [u8]) -> Result<BodyPart<'a>> {
+    if state.dechunker.is_none() {
+        state.dechunker = Some(Dechunker::new());
+    }
+    let dechunker = state.dechunker.as_mut().unwrap();
+    let (input_used, produced_output) = dechunker.parse_input(src, dst)?;
+
+    let output = &mut dst[..produced_output];
+    let finished = dechunker.is_ended();
+
+    Ok(BodyPart {
+        input_used,
+        output,
+        finished,
+    })
+}
 
 pub struct BodyPart<'b> {
     pub(crate) input_used: usize,
@@ -50,14 +120,16 @@ impl RecvBodyMode {
         let has_no_body = !method.has_body();
 
         if has_no_body {
-            if http10 {
-                return Ok(Self::CloseDelimited);
-            } else {
-                return Ok(Self::LengthDelimited(0));
-            }
+            return Ok(Self::LengthDelimited(0));
         }
 
-        Self::header_defined(http10, headers)
+        let ret = match Self::header_defined(http10, headers)? {
+            // Request bodies cannot be close delimited (even under http10).
+            Self::CloseDelimited => Self::LengthDelimited(0),
+            r @ _ => r,
+        };
+
+        Ok(ret)
     }
 
     pub fn for_response(

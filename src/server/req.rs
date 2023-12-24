@@ -1,33 +1,18 @@
 use core::marker::PhantomData;
 use core::mem;
 
-use crate::body::RecvBodyMode;
-use crate::chunk::Dechunker;
+use crate::body::{do_read_body, RecvBodyMode};
 use crate::error::Result;
 use crate::header::transmute_headers;
 use crate::util::{cast_buf_for_headers, LengthChecker};
-use crate::vars::body::*;
-use crate::vars::method::*;
 use crate::vars::private::*;
 use crate::vars::state::*;
-use crate::vars::version::*;
-use crate::Method as M;
+use crate::{BodyPart, CallState};
 use crate::{Header, HootError, HttpVersion, Method};
 
 pub struct Request<S: State> {
     typ: PhantomData<S>,
     state: CallState,
-}
-
-#[derive(Default)]
-pub(crate) struct CallState {
-    pub version: Option<HttpVersion>,
-    pub method: Option<M>,
-    pub recv_checker: Option<LengthChecker>,
-    pub recv_body_mode: Option<RecvBodyMode>,
-    pub send_checker: Option<LengthChecker>,
-    pub dechunker: Option<Dechunker>,
-    pub did_read_to_end: bool,
 }
 
 impl<S: State> Request<S> {
@@ -153,4 +138,40 @@ impl Request<RECV_REQUEST> {
     pub fn proceed(self) -> Request<RECV_BODY> {
         self.transition()
     }
+}
+
+impl Request<RECV_BODY> {
+    pub fn read_body<'a, 'b>(&mut self, src: &'a [u8], dst: &'b mut [u8]) -> Result<BodyPart<'b>> {
+        let already_read_response = self.state.recv_body_mode.is_some();
+
+        // It's valid to skip try_read_response() and progress straight to reading
+        // the body. This ensures we skip the corresponding input.
+        if !already_read_response {
+            let r = self.do_try_read_request(src, dst)?;
+
+            // Still not enough input for the entire status and headers. Need
+            // to try again later.
+            if !r.is_success() {
+                return Ok(BodyPart::empty());
+            }
+        }
+
+        do_read_body(&mut self.state, src, dst)
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.state.did_read_to_end
+    }
+
+    // pub fn into_response(self) -> Result<Response> {
+    //     if let Some(checker) = &self.state.recv_checker {
+    //         checker.assert_expected(HootError::RecvLessThanContentLength)?;
+    //     }
+
+    //     if !self.is_finished() {
+    //         return Err(HootError::BodyNotFinished);
+    //     }
+
+    //     Ok(self.transition())
+    // }
 }
