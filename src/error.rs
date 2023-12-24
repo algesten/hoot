@@ -74,6 +74,9 @@ pub enum HootError {
 
     /// Did not read body to finish.
     BodyNotFinished,
+
+    /// Request method is unknown.
+    UnknownMethod,
 }
 
 pub(crate) static OVERFLOW: Result<()> = Err(HootError::OutputOverflow);

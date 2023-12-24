@@ -3,20 +3,19 @@ use core::marker::PhantomData;
 use core::mem;
 use core::ops::Deref;
 
-use crate::chunk::Dechunker;
 use crate::error::OVERFLOW;
 use crate::out::{Out, Writer};
 use crate::parser::parse_headers;
 use crate::util::{compare_lowercase_ascii, LengthChecker};
+use crate::vars::body::*;
 use crate::vars::method::*;
 use crate::vars::private::*;
 use crate::vars::state::*;
 use crate::vars::version::*;
-use crate::vars::{body::*, M};
-use crate::HttpVersion;
+use crate::Method as M;
+use crate::{CallState, HttpVersion};
 use crate::{HootError, Result};
 
-use super::res::RecvBodyMode;
 use super::Response;
 
 pub struct Request<'a, S: State, V: Version, M: Method, B: BodyType> {
@@ -33,17 +32,6 @@ struct Typ<S: State, V: Version, M: Method, B: BodyType>(
     PhantomData<M>,
     PhantomData<B>,
 );
-
-#[derive(Default)]
-pub(crate) struct CallState {
-    pub version: Option<HttpVersion>,
-    pub method: Option<M>,
-    pub send_checker: Option<LengthChecker>,
-    pub recv_body_mode: Option<RecvBodyMode>,
-    pub recv_checker: Option<LengthChecker>,
-    pub dechunker: Option<Dechunker>,
-    pub did_read_to_end: bool,
-}
 
 impl<'a> Request<'a, (), (), (), ()> {
     pub fn new(buf: &'a mut [u8]) -> Request<'a, INIT, (), (), ()> {

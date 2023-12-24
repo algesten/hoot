@@ -2,7 +2,7 @@ mod req;
 pub use req::{Output, Request, ResumeToken};
 
 mod res;
-pub use res::{BodyPart, Response, Status};
+pub use res::{Response, Status};
 
 #[cfg(test)]
 mod test {

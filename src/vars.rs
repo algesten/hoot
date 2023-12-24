@@ -5,6 +5,7 @@ pub mod state {
     pub struct SEND_HEADERS;
     pub struct SEND_BODY;
     pub struct SEND_TRAILER;
+    pub struct RECV_REQUEST;
     pub struct RECV_RESPONSE;
     pub struct RECV_BODY;
     pub struct RECV_TRAILERS;
@@ -28,19 +29,6 @@ pub mod method {
     pub struct TRACE;
     pub struct CONNECT;
     pub struct PATCH;
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum M {
-    OPTIONS,
-    GET,
-    POST,
-    PUT,
-    DELETE,
-    HEAD,
-    TRACE,
-    CONNECT,
-    PATCH,
 }
 
 #[allow(non_camel_case_types)]
@@ -77,6 +65,7 @@ pub(crate) mod private {
     impl State for SEND_BODY {}
     impl State for SEND_TRAILER {}
     impl State for RECV_RESPONSE {}
+    impl State for RECV_REQUEST {}
     impl State for RECV_BODY {}
     impl State for RECV_TRAILERS {}
     impl State for ENDED {}
@@ -135,26 +124,4 @@ pub(crate) mod private {
     impl BodyType for () {}
     impl BodyType for BODY_LENGTH {}
     impl BodyType for BODY_CHUNKED {}
-}
-
-#[cfg(any(std, test))]
-mod std_impls {
-    use super::*;
-    use std::fmt;
-
-    impl fmt::Debug for M {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            match self {
-                Self::OPTIONS => write!(f, "OPTIONS"),
-                Self::GET => write!(f, "GET"),
-                Self::POST => write!(f, "POST"),
-                Self::PUT => write!(f, "PUT"),
-                Self::DELETE => write!(f, "DELETE"),
-                Self::HEAD => write!(f, "HEAD"),
-                Self::TRACE => write!(f, "TRACE"),
-                Self::CONNECT => write!(f, "CONNECT"),
-                Self::PATCH => write!(f, "PATCH"),
-            }
-        }
-    }
 }

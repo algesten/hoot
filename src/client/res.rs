@@ -2,15 +2,16 @@ use core::marker::PhantomData;
 use core::mem;
 use core::str;
 
+use crate::body::RecvBodyMode;
 use crate::chunk::Dechunker;
 use crate::header::transmute_headers;
-use crate::util::{cast_buf_for_headers, compare_lowercase_ascii, LengthChecker};
+use crate::util::{cast_buf_for_headers, LengthChecker};
+use crate::vars::private::*;
 use crate::vars::state::*;
-use crate::vars::{private::*, M};
-use crate::Result;
+use crate::BodyPart;
+use crate::{CallState, Result};
 use crate::{Header, HootError, HttpVersion};
 
-use super::req::CallState;
 use super::ResumeToken;
 
 pub struct Response<S: State> {
@@ -28,6 +29,7 @@ impl Response<()> {
 
     #[cfg(test)]
     fn new_test() -> Response<RECV_RESPONSE> {
+        use crate::Method as M;
         Response {
             _typ: PhantomData,
             state: CallState {
@@ -77,7 +79,7 @@ impl<S: State> Response<S> {
         let http10 = ver == HttpVersion::Http10;
         let method = self.state.method.unwrap(); // Ok for same reason as above.
         let headers = transmute_headers(r.headers);
-        let mode = RecvBodyMode::from(http10, method, status.1, headers)?;
+        let mode = RecvBodyMode::for_response(http10, method, status.1, headers)?;
 
         // If we are awaiting a length, put a length checker in place
         if let RecvBodyMode::LengthDelimited(len) = mode {
@@ -207,7 +209,7 @@ impl Response<RECV_BODY> {
         src: &'a [u8],
         dst: &'b mut [u8],
         use_checker: bool,
-    ) -> Result<BodyBit<'b>> {
+    ) -> Result<BodyPart<'b>> {
         let input_used = src.len().min(dst.len());
 
         let mut finished = false;
@@ -219,14 +221,14 @@ impl Response<RECV_BODY> {
 
         let output = &mut dst[..input_used];
         output.copy_from_slice(&src[..input_used]);
-        Ok(BodyBit {
+        Ok(BodyPart {
             input_used,
             output,
             finished,
         })
     }
 
-    fn read_chunked<'a>(&mut self, src: &[u8], dst: &'a mut [u8]) -> Result<BodyBit<'a>> {
+    fn read_chunked<'a>(&mut self, src: &[u8], dst: &'a mut [u8]) -> Result<BodyPart<'a>> {
         if self.state.dechunker.is_none() {
             self.state.dechunker = Some(Dechunker::new());
         }
@@ -236,7 +238,7 @@ impl Response<RECV_BODY> {
         let output = &mut dst[..produced_output];
         let finished = dechunker.is_ended();
 
-        Ok(BodyBit {
+        Ok(BodyPart {
             input_used,
             output,
             finished,
@@ -262,113 +264,6 @@ impl Response<RECV_BODY> {
     }
 }
 
-struct BodyBit<'b> {
-    input_used: usize,
-    output: &'b [u8],
-    finished: bool,
-}
-
-pub struct BodyPart<'b> {
-    input_used: usize,
-    output: &'b [u8],
-    finished: bool,
-}
-
-impl BodyPart<'_> {
-    fn empty() -> Self {
-        BodyPart {
-            input_used: 0,
-            output: &[],
-            finished: false,
-        }
-    }
-
-    pub fn input_used(&self) -> usize {
-        self.input_used
-    }
-
-    pub fn output(&self) -> &[u8] {
-        &*self.output
-    }
-
-    pub fn is_finished(&self) -> bool {
-        self.finished
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum RecvBodyMode {
-    /// Delimited by content-length. 0 is also a valid value when we don't expect a body,
-    /// due to HEAD or status, but still want to leave the socket open.
-    LengthDelimited(u64),
-    /// Chunked transfer encoding
-    Chunked,
-    /// Expect remote to close at end of body.
-    CloseDelimited,
-}
-
-impl RecvBodyMode {
-    pub fn from(http10: bool, method: M, status_code: u16, headers: &[Header<'_>]) -> Result<Self> {
-        let is_success = status_code >= 200 && status_code <= 299;
-        let is_informational = status_code >= 100 && status_code <= 199;
-
-        let has_no_body =
-            // https://datatracker.ietf.org/doc/html/rfc2616#section-4.3
-            // All responses to the HEAD request method
-            // MUST NOT include a message-body, even though the presence of entity-
-            // header fields might lead one to believe they do.
-            method == M::HEAD ||
-            // A client MUST ignore any Content-Length or Transfer-Encoding
-            // header fields received in a successful response to CONNECT.
-            is_success && method == M::CONNECT ||
-            // All 1xx (informational), 204 (no content), and 304 (not modified) responses
-            // MUST NOT include a message-body.
-            is_informational ||
-            matches!(status_code, 204 | 304);
-
-        if has_no_body {
-            return Ok(Self::LengthDelimited(0));
-        }
-
-        // https://datatracker.ietf.org/doc/html/rfc2616#section-4.3
-        // All other responses do include a message-body, although it MAY be of zero length.
-
-        let mut content_length: Option<u64> = None;
-        let mut chunked = false;
-
-        for head in headers {
-            if compare_lowercase_ascii(head.name(), "content-length") {
-                let v = str::from_utf8(head.value_raw())?.parse::<u64>()?;
-                if content_length.is_some() {
-                    return Err(HootError::DuplicateContentLength);
-                }
-                content_length = Some(v);
-            } else if !chunked && compare_lowercase_ascii(head.name(), "transfer-encoding") {
-                // Header can repeat, stop looking if we found "chunked"
-                let s = str::from_utf8(head.value_raw())?;
-                chunked = s
-                    .split(",")
-                    .map(|v| v.trim())
-                    .any(|v| compare_lowercase_ascii(v, "chunked"));
-            }
-        }
-
-        if chunked && !http10 {
-            // https://datatracker.ietf.org/doc/html/rfc2616#section-4.4
-            // Messages MUST NOT include both a Content-Length header field and a
-            // non-identity transfer-coding. If the message does include a non-
-            // identity transfer-coding, the Content-Length MUST be ignored.
-            return Ok(Self::Chunked);
-        }
-
-        if let Some(len) = content_length {
-            return Ok(Self::LengthDelimited(len));
-        }
-
-        Ok(Self::CloseDelimited)
-    }
-}
-
 #[cfg(any(std, test))]
 mod std_impls {
     use super::*;
@@ -381,18 +276,6 @@ mod std_impls {
                 .field(&self.1)
                 .field(&self.2)
                 .finish()
-        }
-    }
-
-    impl fmt::Debug for RecvBodyMode {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            match self {
-                Self::LengthDelimited(arg0) => {
-                    f.debug_tuple("LengthDelimited").field(arg0).finish()
-                }
-                Self::Chunked => write!(f, "Chunked"),
-                Self::CloseDelimited => write!(f, "CloseDelimited"),
-            }
         }
     }
 }
