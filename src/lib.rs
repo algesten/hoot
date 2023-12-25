@@ -60,7 +60,7 @@ pub enum Method {
 }
 
 impl Method {
-    pub fn has_body(&self) -> bool {
+    pub fn has_request_body(&self) -> bool {
         use Method::*;
         matches!(self, POST | PUT | PATCH)
     }

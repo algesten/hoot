@@ -1,7 +1,14 @@
 use core::fmt;
+use core::fmt::Write;
 use core::mem;
 use core::str;
 use httparse::Header as InnerHeader;
+
+use crate::error::{Result, OVERFLOW};
+use crate::out::Writer;
+use crate::parser::parse_headers;
+use crate::util::compare_lowercase_ascii;
+use crate::{HootError, HttpVersion};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Header<'a> {
@@ -50,6 +57,97 @@ pub(crate) fn transmute_headers<'a, 'b>(headers: &'b [InnerHeader<'a>]) -> &'b [
     unsafe { mem::transmute(headers) }
 }
 
+pub fn check_and_output_header(
+    mut w: Writer,
+    version: HttpVersion,
+    name: &str,
+    bytes: &[u8],
+    trailer: bool,
+) -> Result<()> {
+    // Writer header
+    write!(w, "{}: ", name).or(OVERFLOW)?;
+    w.write_bytes(bytes)?;
+    write!(w, "\r\n").or(OVERFLOW)?;
+
+    if trailer {
+        check_headers(name, HEADERS_FORBID_TRAILER, HootError::ForbiddenTrailer)?;
+    } else {
+        // These headers are forbidden because we write them with
+        check_headers(name, HEADERS_FORBID_BODY, HootError::ForbiddenBodyHeader)?;
+
+        match version {
+            HttpVersion::Http10 => {
+                // TODO: forbid specific headers for 1.0
+            }
+            HttpVersion::Http11 => {
+                check_headers(name, HEADERS_FORBID_11, HootError::ForbiddenHttp11Header)?
+            }
+        }
+    }
+
+    // TODO: forbid headers that are not allowed to be repeated
+
+    // Parse the written result to see if httparse can validate it.
+    let (written, buf) = w.split_and_borrow();
+
+    let result = parse_headers(written, buf)?;
+
+    if result.len() != 1 {
+        // If we don't manage to parse back the hedaer we just wrote, it's a bug in hoot.
+        panic!("Failed to parse one written header");
+    }
+
+    // If nothing error before this, commit the result to Out.
+    w.commit();
+
+    Ok(())
+}
+
+// Headers that are not allowed because we set them as part of making a call.
+const HEADERS_FORBID_BODY: &[&str] = &[
+    // header set by with_body()
+    "content-length",
+    // header set by with_chunked()
+    "transfer-encoding",
+];
+
+const HEADERS_FORBID_11: &[&str] = &[
+    // host is already set by the Call::<verb>(host, path)
+    "host",
+];
+
+const HEADERS_FORBID_TRAILER: &[&str] = &[
+    "transfer-encoding",
+    "content-length",
+    "host",
+    "cache-control",
+    "max-forwards",
+    "authorization",
+    "set-cookie",
+    "content-type",
+    "content-range",
+    "te",
+    "trailer",
+];
+
+// message framing headers (e.g., Transfer-Encoding and Content-Length),
+// routing headers (e.g., Host),
+// request modifiers (e.g., controls and conditionals, like Cache-Control, Max-Forwards, or TE),
+// authentication headers (e.g., Authorization or Set-Cookie),
+// or Content-Encoding, Content-Type, Content-Range, and Trailer itself.
+
+fn check_headers(name: &str, forbidden: &[&str], err: HootError) -> Result<()> {
+    for c in forbidden {
+        if !compare_lowercase_ascii(name, c) {
+            continue;
+        }
+
+        // name matched c. This is a forbidden header.
+        return Err(err);
+    }
+
+    Ok(())
+}
 #[cfg(test)]
 mod test {
     use super::*;

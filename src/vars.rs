@@ -2,6 +2,7 @@
 pub mod state {
     pub struct INIT;
     pub struct SEND_LINE;
+    pub struct SEND_STATUS;
     pub struct SEND_HEADERS;
     pub struct SEND_BODY;
     pub struct SEND_TRAILER;
@@ -61,6 +62,7 @@ pub(crate) mod private {
     impl State for () {}
     impl State for INIT {}
     impl State for SEND_LINE {}
+    impl State for SEND_STATUS {}
     impl State for SEND_HEADERS {}
     impl State for SEND_BODY {}
     impl State for SEND_TRAILER {}
@@ -106,19 +108,31 @@ pub(crate) mod private {
     }
     impl Method for PATCH {}
 
-    pub trait MethodWithBody: Method {}
+    pub trait MethodWithRequestBody: Method {}
+    impl MethodWithRequestBody for POST {}
+    impl MethodWithRequestBody for PUT {}
+    impl MethodWithRequestBody for PATCH {}
 
-    impl MethodWithBody for POST {}
-    impl MethodWithBody for PUT {}
-    impl MethodWithBody for PATCH {}
+    pub trait MethodWithoutRequestBody: Method {}
+    impl MethodWithoutRequestBody for OPTIONS {}
+    impl MethodWithoutRequestBody for GET {}
+    impl MethodWithoutRequestBody for DELETE {}
+    impl MethodWithoutRequestBody for HEAD {}
+    impl MethodWithoutRequestBody for CONNECT {}
+    impl MethodWithoutRequestBody for TRACE {}
 
-    pub trait MethodWithoutBody: Method {}
-    impl MethodWithoutBody for OPTIONS {}
-    impl MethodWithoutBody for GET {}
-    impl MethodWithoutBody for DELETE {}
-    impl MethodWithoutBody for HEAD {}
-    impl MethodWithoutBody for CONNECT {}
-    impl MethodWithoutBody for TRACE {}
+    pub trait MethodWithResponseBody: Method {}
+    impl MethodWithResponseBody for OPTIONS {}
+    impl MethodWithResponseBody for GET {}
+    impl MethodWithResponseBody for POST {}
+    impl MethodWithResponseBody for PUT {}
+    impl MethodWithResponseBody for DELETE {}
+    impl MethodWithResponseBody for TRACE {}
+    impl MethodWithResponseBody for PATCH {}
+
+    pub trait MethodWithoutResponseBody: Method {}
+    impl MethodWithoutResponseBody for HEAD {}
+    impl MethodWithoutResponseBody for CONNECT {}
 
     pub trait BodyType {}
     impl BodyType for () {}

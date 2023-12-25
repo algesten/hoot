@@ -10,9 +10,20 @@ use crate::vars::state::*;
 use crate::{BodyPart, CallState};
 use crate::{Header, HootError, HttpVersion, Method};
 
+use super::res::ResponseVariant;
+
 pub struct Request<S: State> {
     typ: PhantomData<S>,
     state: CallState,
+}
+
+impl Request<()> {
+    pub fn new() -> Request<RECV_REQUEST> {
+        Request {
+            typ: PhantomData,
+            state: CallState::default(),
+        }
+    }
 }
 
 impl<S: State> Request<S> {
@@ -42,6 +53,7 @@ impl<S: State> Request<S> {
         };
 
         let method: Method = r.method.unwrap().try_into()?;
+        self.state.method = Some(method);
 
         let path = r.path.unwrap();
 
@@ -55,9 +67,9 @@ impl<S: State> Request<S> {
 
         // Derive body mode from knowledge this far.
         let http10 = ver == HttpVersion::Http10;
-        let method = self.state.method.unwrap(); // Ok for same reason as above.
         let headers = transmute_headers(r.headers);
         let mode = RecvBodyMode::for_request(http10, method, headers)?;
+        self.state.recv_body_mode = Some(mode);
 
         // If we are awaiting a length, put a length checker in place
         if let RecvBodyMode::LengthDelimited(len) = mode {
@@ -65,9 +77,6 @@ impl<S: State> Request<S> {
                 self.state.recv_checker = Some(LengthChecker::new(len));
             }
         }
-
-        // Remember the body mode
-        self.state.recv_body_mode = Some(mode);
 
         Ok(RequestAttempt {
             input_used,
@@ -160,18 +169,29 @@ impl Request<RECV_BODY> {
     }
 
     pub fn is_finished(&self) -> bool {
-        self.state.did_read_to_end
+        use RecvBodyMode::*;
+
+        let Some(mode) = self.state.recv_body_mode else {
+            return false;
+        };
+
+        match mode {
+            LengthDelimited(n) => n == 0 || self.state.did_read_to_end,
+            Chunked => self.state.did_read_to_end,
+            CloseDelimited => unreachable!("CloseDelimited is not possible for server::Request"),
+        }
     }
 
-    // pub fn into_response(self) -> Result<Response> {
-    //     if let Some(checker) = &self.state.recv_checker {
-    //         checker.assert_expected(HootError::RecvLessThanContentLength)?;
-    //     }
+    pub fn into_response(self) -> Result<ResponseVariant> {
+        if let Some(checker) = &self.state.recv_checker {
+            checker.assert_expected(HootError::RecvLessThanContentLength)?;
+        }
 
-    //     if !self.is_finished() {
-    //         return Err(HootError::BodyNotFinished);
-    //     }
+        if !self.is_finished() {
+            return Err(HootError::BodyNotFinished);
+        }
 
-    //     Ok(self.transition())
-    // }
+        // Unwrap is OK, because the request method was read earlier.
+        Ok(self.state.into())
+    }
 }

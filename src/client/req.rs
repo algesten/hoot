@@ -4,9 +4,9 @@ use core::mem;
 use core::ops::Deref;
 
 use crate::error::OVERFLOW;
+use crate::header::check_and_output_header;
 use crate::out::{Out, Writer};
-use crate::parser::parse_headers;
-use crate::util::{compare_lowercase_ascii, LengthChecker};
+use crate::util::LengthChecker;
 use crate::vars::body::*;
 use crate::vars::method::*;
 use crate::vars::private::*;
@@ -33,6 +33,16 @@ struct Typ<S: State, V: Version, M: Method, B: BodyType>(
     PhantomData<B>,
 );
 
+pub struct ResumeToken<S: State, V: Version, M: Method, B: BodyType> {
+    typ: Typ<S, V, M, B>,
+    state: CallState,
+}
+
+pub struct Output<'a, S: State, V: Version, M: Method, B: BodyType> {
+    token: ResumeToken<S, V, M, B>,
+    output: &'a [u8],
+}
+
 impl<'a> Request<'a, (), (), (), ()> {
     pub fn new(buf: &'a mut [u8]) -> Request<'a, INIT, (), (), ()> {
         let typ: Typ<(), (), (), ()> = Typ::default();
@@ -55,42 +65,8 @@ impl<'a, S: State, V: Version, M: Method, B: BodyType> Request<'a, S, V, M, B> {
 
     fn header_raw(mut self, name: &str, bytes: &[u8], trailer: bool) -> Result<Self> {
         // Attempt writing the header
-        let mut w = self.out.writer();
-        write!(w, "{}: ", name).or(OVERFLOW)?;
-        w.write_bytes(bytes)?;
-        write!(w, "\r\n").or(OVERFLOW)?;
-
-        if trailer {
-            check_headers(name, HEADERS_FORBID_TRAILER, HootError::ForbiddenTrailer)?;
-        } else {
-            // These headers are forbidden because we write them with
-            check_headers(name, HEADERS_FORBID_BODY, HootError::ForbiddenBodyHeader)?;
-
-            match V::version() {
-                HttpVersion::Http10 => {
-                    // TODO: forbid specific headers for 1.0
-                }
-                HttpVersion::Http11 => {
-                    check_headers(name, HEADERS_FORBID_11, HootError::ForbiddenHttp11Header)?
-                }
-            }
-        }
-
-        // TODO: forbid headers that are not allowed to be repeated
-
-        // Parse the written result to see if httparse can validate it.
-        let (written, buf) = w.split_and_borrow();
-
-        let result = parse_headers(written, buf)?;
-
-        if result.len() != 1 {
-            // If we don't manage to parse back the hedaer we just wrote, it's a bug in hoot.
-            panic!("Failed to parse one written header");
-        }
-
-        // If nothing error before this, commit the result to Out.
-        w.commit();
-
+        let w = self.out.writer();
+        check_and_output_header(w, V::version(), name, bytes, trailer)?;
         Ok(self)
     }
 
@@ -113,11 +89,6 @@ impl<'a, S: State, V: Version, M: Method, B: BodyType> Request<'a, S, V, M, B> {
     }
 }
 
-pub struct Output<'a, S: State, V: Version, M: Method, B: BodyType> {
-    token: ResumeToken<S, V, M, B>,
-    output: &'a [u8],
-}
-
 impl<'a, S: State, V: Version, M: Method, B: BodyType> Output<'a, S, V, M, B> {
     pub fn ready(self) -> ResumeToken<S, V, M, B> {
         self.token
@@ -134,11 +105,6 @@ impl<'a, S: State, V: Version, M: Method, B: BodyType> Deref for Output<'a, S, V
     fn deref(&self) -> &Self::Target {
         &self.output
     }
-}
-
-pub struct ResumeToken<S: State, V: Version, M: Method, B: BodyType> {
-    typ: Typ<S, V, M, B>,
-    state: CallState,
 }
 
 impl<S: State, V: Version, M: Method, B: BodyType> ResumeToken<S, V, M, B> {
@@ -226,7 +192,7 @@ impl<'a, M: Method, V: Version> Request<'a, SEND_HEADERS, V, M, ()> {
     }
 }
 
-impl<'a, M: MethodWithBody> Request<'a, SEND_HEADERS, HTTP_10, M, ()> {
+impl<'a, M: MethodWithRequestBody> Request<'a, SEND_HEADERS, HTTP_10, M, ()> {
     pub fn with_body(
         mut self,
         length: u64,
@@ -249,7 +215,7 @@ impl<'a, M: MethodWithBody> Request<'a, SEND_HEADERS, HTTP_10, M, ()> {
     }
 }
 
-impl<'a, M: MethodWithBody> Request<'a, SEND_HEADERS, HTTP_11, M, ()> {
+impl<'a, M: MethodWithRequestBody> Request<'a, SEND_HEADERS, HTTP_11, M, ()> {
     pub fn with_body(
         mut self,
         length: u64,
@@ -280,7 +246,7 @@ impl<'a, M: MethodWithBody> Request<'a, SEND_HEADERS, HTTP_11, M, ()> {
     }
 }
 
-impl<'a, V: Version, M: MethodWithoutBody> Request<'a, SEND_HEADERS, V, M, ()> {
+impl<'a, V: Version, M: MethodWithoutRequestBody> Request<'a, SEND_HEADERS, V, M, ()> {
     // TODO: Can we find a trait bound that allows us to call this without_body()?
     pub fn send(mut self) -> Result<Request<'a, ENDED, (), (), ()>> {
         let mut w = self.out.writer();
@@ -291,7 +257,7 @@ impl<'a, V: Version, M: MethodWithoutBody> Request<'a, SEND_HEADERS, V, M, ()> {
     }
 }
 
-impl<'a, V: Version, M: MethodWithBody> Request<'a, SEND_BODY, V, M, BODY_LENGTH> {
+impl<'a, V: Version, M: MethodWithRequestBody> Request<'a, SEND_BODY, V, M, BODY_LENGTH> {
     #[inline(always)]
     fn checker(&mut self) -> &mut LengthChecker {
         self.state
@@ -322,7 +288,7 @@ impl<'a, V: Version, M: MethodWithBody> Request<'a, SEND_BODY, V, M, BODY_LENGTH
     }
 }
 
-impl<'a, V: Version, M: MethodWithBody> Request<'a, SEND_BODY, V, M, BODY_CHUNKED> {
+impl<'a, V: Version, M: MethodWithRequestBody> Request<'a, SEND_BODY, V, M, BODY_CHUNKED> {
     pub fn write_chunk(&mut self, bytes: &[u8]) -> Result<()> {
         // Writing no bytes is ok. Ending the chunk writing is by doing the finish() call.
         if bytes.is_empty() {
@@ -345,7 +311,7 @@ impl<'a, V: Version, M: MethodWithBody> Request<'a, SEND_BODY, V, M, BODY_CHUNKE
         Ok(())
     }
 
-    pub fn with_trailer(mut self) -> Result<Request<'a, SEND_TRAILER, V, M, ()>> {
+    pub fn with_trailer(mut self) -> Result<Request<'a, SEND_TRAILER, V, M, BODY_CHUNKED>> {
         let mut w = self.out.writer();
         write!(w, "0\r\n").or(OVERFLOW)?;
         w.commit();
@@ -363,7 +329,7 @@ impl<'a, V: Version, M: MethodWithBody> Request<'a, SEND_BODY, V, M, BODY_CHUNKE
 }
 
 // TODO: ensure trailers are declared in a `Trailer: xxx` header.
-impl<'a, V: Version, M: MethodWithBody> Request<'a, SEND_TRAILER, V, M, ()> {
+impl<'a, V: Version, M: MethodWithRequestBody> Request<'a, SEND_TRAILER, V, M, BODY_CHUNKED> {
     pub fn trailer(self, name: &str, value: &str) -> Result<Self> {
         self.header_raw(name, value.as_bytes(), true)
     }
@@ -391,52 +357,6 @@ impl ResumeToken<ENDED, (), (), ()> {
     pub fn into_response(self) -> Response<RECV_RESPONSE> {
         Response::resume(self)
     }
-}
-
-// Headers that are not allowed because we set them as part of making a call.
-const HEADERS_FORBID_BODY: &[&str] = &[
-    // header set by with_body()
-    "content-length",
-    // header set by with_chunked()
-    "transfer-encoding",
-];
-
-const HEADERS_FORBID_11: &[&str] = &[
-    // host is already set by the Call::<verb>(host, path)
-    "host",
-];
-
-const HEADERS_FORBID_TRAILER: &[&str] = &[
-    "transfer-encoding",
-    "content-length",
-    "host",
-    "cache-control",
-    "max-forwards",
-    "authorization",
-    "set-cookie",
-    "content-type",
-    "content-range",
-    "te",
-    "trailer",
-];
-
-// message framing headers (e.g., Transfer-Encoding and Content-Length),
-// routing headers (e.g., Host),
-// request modifiers (e.g., controls and conditionals, like Cache-Control, Max-Forwards, or TE),
-// authentication headers (e.g., Authorization or Set-Cookie),
-// or Content-Encoding, Content-Type, Content-Range, and Trailer itself.
-
-fn check_headers(name: &str, forbidden: &[&str], err: HootError) -> Result<()> {
-    for c in forbidden {
-        if !compare_lowercase_ascii(name, c) {
-            continue;
-        }
-
-        // name matched c. This is a forbidden header.
-        return Err(err);
-    }
-
-    Ok(())
 }
 
 #[cfg(any(std, test))]

@@ -79,6 +79,7 @@ impl<S: State> Response<S> {
         let method = self.state.method.unwrap(); // Ok for same reason as above.
         let headers = transmute_headers(r.headers);
         let mode = RecvBodyMode::for_response(http10, method, status.1, headers)?;
+        self.state.recv_body_mode = Some(mode);
 
         // If we are awaiting a length, put a length checker in place
         if let RecvBodyMode::LengthDelimited(len) = mode {
@@ -86,9 +87,6 @@ impl<S: State> Response<S> {
                 self.state.recv_checker = Some(LengthChecker::new(len));
             }
         }
-
-        // Remember the body mode
-        self.state.recv_body_mode = Some(mode);
 
         Ok(ResponseAttempt {
             input_used: n,
@@ -181,9 +179,17 @@ impl Response<RECV_BODY> {
     }
 
     pub fn is_finished(&self) -> bool {
-        let mode = self.state.recv_body_mode.unwrap();
-        let close_delimited = matches!(mode, RecvBodyMode::CloseDelimited);
-        !close_delimited && self.state.did_read_to_end
+        use RecvBodyMode::*;
+
+        let Some(mode) = self.state.recv_body_mode else {
+            return false;
+        };
+
+        match mode {
+            LengthDelimited(n) => n == 0 || self.state.did_read_to_end,
+            Chunked => self.state.did_read_to_end,
+            CloseDelimited => unreachable!("CloseDelimited is not possible for server::Request"),
+        }
     }
 
     pub fn finish(self) -> Result<Response<ENDED>> {

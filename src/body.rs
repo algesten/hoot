@@ -117,7 +117,7 @@ pub enum RecvBodyMode {
 
 impl RecvBodyMode {
     pub fn for_request(http10: bool, method: Method, headers: &[Header<'_>]) -> Result<Self> {
-        let has_no_body = !method.has_body();
+        let has_no_body = !method.has_request_body();
 
         if has_no_body {
             return Ok(Self::LengthDelimited(0));
