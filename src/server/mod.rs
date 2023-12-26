@@ -70,9 +70,31 @@ mod test {
 
         let response = Response::resume(token, &mut buf);
 
-        response
+        let output = response
             .send_status(200, "Ok")?
-            .header("content-type", "application/json")?;
+            .header("content-type", "application/json")?
+            .with_chunked()?
+            .flush();
+
+        const EXPECTED: &[u8] = b"HTTP/1.1 200 Ok\r\n\
+            content-type: application/json\r\n\
+            Transfer-Encoding: chunked\r\n\r\n";
+
+        // Output derefs to `&[u8]`, but if that feels opaque, we can use `as_bytes()`.
+        assert_eq!(&*output, EXPECTED);
+
+        let token = output.ready();
+
+        let response = Response::resume(token, &mut buf);
+
+        let output = response
+            .write_chunk(b"{\"hello\":\"world\"}")?
+            .finish()?
+            .flush();
+
+        const EXPECTED_BODY: &[u8] = b"11\r\n{\"hello\":\"world\"}\r\n0\r\n\r\n";
+
+        assert_eq!(&*output, EXPECTED_BODY);
 
         Ok(())
     }

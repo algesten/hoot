@@ -62,6 +62,7 @@ impl<S: State> Request<S> {
             1 => HttpVersion::Http11,
             _ => return Err(HootError::Version),
         };
+        self.state.version = Some(ver);
 
         let line = Line(method, path, ver);
 

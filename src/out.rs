@@ -34,7 +34,7 @@ impl<'a> Out<'a> {
         }
     }
 
-    pub fn flush(self) -> &'a [u8] {
+    pub fn into_inner(self) -> &'a [u8] {
         &self.buf[..self.pos]
     }
 }

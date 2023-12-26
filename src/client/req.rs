@@ -76,7 +76,7 @@ impl<'a, S: State, V: Version, M: Method, B: BodyType> Request<'a, S, V, M, B> {
                 typ: self.typ,
                 state: self.state,
             },
-            output: self.out.flush(),
+            output: self.out.into_inner(),
         }
     }
 
@@ -289,10 +289,10 @@ impl<'a, V: Version, M: MethodWithRequestBody> Request<'a, SEND_BODY, V, M, BODY
 }
 
 impl<'a, V: Version, M: MethodWithRequestBody> Request<'a, SEND_BODY, V, M, BODY_CHUNKED> {
-    pub fn write_chunk(&mut self, bytes: &[u8]) -> Result<()> {
+    pub fn write_chunk(mut self, bytes: &[u8]) -> Result<Self> {
         // Writing no bytes is ok. Ending the chunk writing is by doing the finish() call.
         if bytes.is_empty() {
-            return Ok(());
+            return Ok(self);
         }
 
         let mut w = self.out.writer();
@@ -308,7 +308,7 @@ impl<'a, V: Version, M: MethodWithRequestBody> Request<'a, SEND_BODY, V, M, BODY
 
         w.commit();
 
-        Ok(())
+        Ok(self)
     }
 
     pub fn with_trailer(mut self) -> Result<Request<'a, SEND_TRAILER, V, M, BODY_CHUNKED>> {

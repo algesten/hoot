@@ -78,7 +78,7 @@ impl<'a, S: State, M: Method, B: BodyType> Response<'a, S, M, B> {
                 typ: self.typ,
                 state: self.state,
             },
-            output: self.out.flush(),
+            output: self.out.into_inner(),
         }
     }
 
@@ -192,10 +192,10 @@ impl<'a, M: MethodWithResponseBody> Response<'a, SEND_BODY, M, BODY_LENGTH> {
 }
 
 impl<'a, M: MethodWithResponseBody> Response<'a, SEND_BODY, M, BODY_CHUNKED> {
-    pub fn write_chunk(&mut self, bytes: &[u8]) -> Result<()> {
+    pub fn write_chunk(mut self, bytes: &[u8]) -> Result<Self> {
         // Writing no bytes is ok. Ending the chunk writing is by doing the finish() call.
         if bytes.is_empty() {
-            return Ok(());
+            return Ok(self);
         }
 
         let mut w = self.out.writer();
@@ -211,7 +211,7 @@ impl<'a, M: MethodWithResponseBody> Response<'a, SEND_BODY, M, BODY_CHUNKED> {
 
         w.commit();
 
-        Ok(())
+        Ok(self)
     }
 
     pub fn with_trailer(mut self) -> Result<Response<'a, SEND_TRAILER, M, BODY_CHUNKED>> {
