@@ -6,10 +6,12 @@
 pub enum UrlError {
     TooShort,
     MissingScheme,
-    PortNotANumber,
-    FragmentBeforeQuery,
     TooShortUserPass,
     BadPassword,
+    TooShortHost,
+    PortNotANumber,
+    PathAfterQueryOrFragment,
+    FragmentBeforeQuery,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -59,7 +61,14 @@ impl<'a> Url<'a> {
         // https://foo.com#a=b
         // https://foo.com/
         // https://foo.com/path
-        let path_start = x.find("/").or(query_or_fragment).unwrap_or(x.len());
+        let maybe_slash = x.find("/");
+        let path_start = maybe_slash.or(query_or_fragment).unwrap_or(x.len());
+
+        if let (Some(s), Some(qf)) = (maybe_slash, query_or_fragment) {
+            if qf < s {
+                return Err(UrlError::PathAfterQueryOrFragment);
+            }
+        }
 
         // Limit buffer to be between '://' and the start of the path '/'
         let x = &x[..path_start];
@@ -89,10 +98,12 @@ impl<'a> Url<'a> {
         let username_end = maybe_upass.map(|n| split_username(&x[..n])).transpose()?;
 
         let host_start = maybe_upass.map(|n| n + 1).unwrap_or(0);
-
         let port_start = x[host_start..path_start].find(":").map(|n| n + host_start);
-
         let host_end = port_start.unwrap_or(path_start);
+
+        if host_start == host_end {
+            return Err(UrlError::TooShortHost);
+        }
 
         let mut port = None;
 
@@ -127,6 +138,7 @@ impl<'a> Url<'a> {
 
     pub fn password(&self) -> &str {
         self.username_end
+            .filter(|u| *u + 1 < self.host_start)
             .map(|u| &self.buffer[(u as usize + 1)..self.host_start as usize - 1])
             .unwrap_or(&"")
     }

@@ -1,7 +1,7 @@
 //! no_std, allocation free http library.
 
 // For tests we use std.
-#![cfg_attr(not(test), no_std)]
+// #![cfg_attr(not(test), no_std)]
 
 mod chunk;
 use chunk::Dechunker;
