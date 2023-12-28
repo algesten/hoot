@@ -1,7 +1,10 @@
 use core::num::ParseIntError;
 use core::str::Utf8Error;
 
+use crate::url::UrlError;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum HootError {
     /// The borrowed buffer did not have enough space to hold the
     /// data we attempted to write.
@@ -77,6 +80,9 @@ pub enum HootError {
 
     /// Request method is unknown.
     UnknownMethod,
+
+    /// Url parsing error
+    UrlError(UrlError),
 }
 
 pub(crate) static OVERFLOW: Result<()> = Err(HootError::OutputOverflow);
