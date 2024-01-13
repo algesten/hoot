@@ -2,6 +2,11 @@
 name = "hoot"
 version = "0.1.0"
 edition = "2021"
+authors = ["Martin Algesten <martin@algesten.se>"]
+description = "no_std, allocation free http 1.1 library"
+keywords = ["http", "server", "web"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/algesten/hoot"
 
 [features]
 default = []
