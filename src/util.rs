@@ -89,7 +89,7 @@ impl LengthChecker {
     }
 }
 
-#[cfg(any(std, test))]
+#[cfg(feature = "std")]
 mod std_impls {
     use super::*;
     use std::fmt;

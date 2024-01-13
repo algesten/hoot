@@ -1,3 +1,4 @@
+use core::fmt;
 use core::num::ParseIntError;
 use core::str::Utf8Error;
 
@@ -114,3 +115,43 @@ impl From<httparse::Error> for HootError {
         }
     }
 }
+
+impl fmt::Display for HootError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use HootError::*;
+        let s = match self {
+            OutputOverflow => "output buffer overflow",
+            HeaderName => "invalid header name",
+            HeaderValue => "invalid header value",
+            NewLine => "invalid new line",
+            Status => "invalid response status",
+            Token => "invalid token",
+            TooManyHeaders => "too many headers",
+            Version => "invalid HTTP version",
+            ForbiddenBodyHeader => "forbidden header name",
+            ForbiddenHttp11Header => "forbidden header for http1.1",
+            ForbiddenTrailer => "forbidden trailer",
+            SentMoreThanContentLength => "sent more than content-length",
+            SentLessThanContentLength => "sent less than content-length",
+            RecvMoreThanContentLength => "received more than content-length",
+            RecvLessThanContentLength => "received less than content-length",
+            ConvertBytesToStr => "failed to convert &[u8] to &str",
+            HttpVersionMismatch => "http version mismatch",
+            StatusIsNotComplete => "called complete() before entire status read",
+            ParseIntError => "failed to parse integer",
+            DuplicateContentLength => "multiple content-length headers",
+            IncorrectChunk => "incorrect incoming body chunk",
+            BodyNotFinished => "called finish() before body was finished",
+            UnknownMethod => "unknown incoming method",
+            UrlError(v) => {
+                write!(f, "url: {}", v)?;
+                return Ok(());
+            }
+        };
+
+        write!(f, "{}", s)
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for HootError {}

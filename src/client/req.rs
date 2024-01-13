@@ -359,7 +359,7 @@ impl ResumeToken<ENDED, (), (), ()> {
     }
 }
 
-#[cfg(any(std, test))]
+#[cfg(feature = "std")]
 mod std_impls {
     use super::*;
     use std::fmt;
@@ -383,7 +383,7 @@ mod std_impls {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod test {
     use super::*;
     use crate::HootError;

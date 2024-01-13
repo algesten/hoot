@@ -26,7 +26,7 @@ impl Response<()> {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "std"))]
     fn new_test() -> Response<RECV_RESPONSE> {
         use crate::Method as M;
         Response {
@@ -205,7 +205,7 @@ impl Response<RECV_BODY> {
     }
 }
 
-#[cfg(any(std, test))]
+#[cfg(feature = "std")]
 mod std_impls {
     use super::*;
     use std::fmt;
@@ -221,7 +221,7 @@ mod std_impls {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod test {
     use super::*;
 

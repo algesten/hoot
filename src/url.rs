@@ -1,5 +1,8 @@
 //!
 
+use core::fmt;
+use core::ops::Deref;
+
 ///
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -176,6 +179,14 @@ impl<'a> Url<'a> {
     pub fn fragment(&self) -> Option<&str> {
         self.fragment_start.map(|s| &self.buffer[s as usize..])
     }
+
+    pub fn base(&self) -> Url<'a> {
+        let mut u = self.clone();
+        u.query_start = None;
+        u.fragment_start = None;
+        u.buffer = &u.buffer[..(u.path_start as usize)];
+        u
+    }
 }
 
 impl<'a> TryFrom<&'a str> for Url<'a> {
@@ -185,6 +196,40 @@ impl<'a> TryFrom<&'a str> for Url<'a> {
         Self::parse_str(value)
     }
 }
+
+impl fmt::Display for Url<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.buffer)
+    }
+}
+
+impl Deref for Url<'_> {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.buffer
+    }
+}
+
+impl fmt::Display for UrlError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use UrlError::*;
+        let s = match self {
+            TooShort => "too short",
+            MissingScheme => "missing scheme",
+            TooShortUserPass => "too short user/password",
+            BadPassword => "bad password",
+            TooShortHost => "too short hostname",
+            PortNotANumber => "port is not a number",
+            PathAfterQueryOrFragment => "path after query or fragment",
+            FragmentBeforeQuery => "fragment before query",
+        };
+        write!(f, "{}", s)
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for UrlError {}
 
 #[cfg(test)]
 mod test {

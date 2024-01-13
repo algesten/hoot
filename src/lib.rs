@@ -1,7 +1,7 @@
 //! no_std, allocation free http library.
 
 // For tests we use std.
-// #![cfg_attr(not(test), no_std)]
+#![cfg_attr(all(not(feature = "std"), not(test)), no_std)]
 
 mod chunk;
 use chunk::Dechunker;
@@ -99,7 +99,7 @@ pub(crate) struct CallState {
     pub did_read_to_end: bool,
 }
 
-#[cfg(any(std, test))]
+#[cfg(feature = "std")]
 mod std_impls {
     use super::*;
     use std::fmt;

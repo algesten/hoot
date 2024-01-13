@@ -4,7 +4,7 @@ pub use req::{Line, Request};
 mod res;
 pub use res::{Response, ResponseVariant, ResumeToken};
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod test {
     use crate::error::Result;
     use crate::HttpVersion;
