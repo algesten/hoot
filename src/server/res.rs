@@ -122,7 +122,12 @@ impl<'a, M: Method> Response<'a, SEND_HEADERS, M, ()> {
 }
 
 impl<'a, M: MethodWithResponseBody> Response<'a, SEND_HEADERS, M, ()> {
-    pub fn with_body(mut self, length: u64) -> Result<Response<'a, SEND_BODY, M, BODY_LENGTH>> {
+    pub fn with_body(
+        mut self,
+        length: impl TryInto<u64>,
+    ) -> Result<Response<'a, SEND_BODY, M, BODY_LENGTH>> {
+        let length: u64 = length.try_into().map_err(|_| HootError::BodyNotFinished)?;
+
         let mut w = self.out.writer();
         write!(w, "Content-Length: {}\r\n\r\n", length).or(OVERFLOW)?;
         w.commit();

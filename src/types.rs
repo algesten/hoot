@@ -30,6 +30,11 @@ pub trait Method: Private {
     }
 }
 
+pub trait MethodWithRequestBody: Method {}
+pub trait MethodWithoutRequestBody: Method {}
+pub trait MethodWithResponseBody: Method {}
+pub trait MethodWithoutResponseBody: Method {}
+
 pub trait BodyType: Private {}
 
 impl Private for () {}
@@ -104,12 +109,8 @@ pub mod version {
 
 #[allow(non_camel_case_types)]
 pub mod method {
-    use super::Method;
-
-    pub trait MethodWithRequestBody: Method {}
-    pub trait MethodWithoutRequestBody: Method {}
-    pub trait MethodWithResponseBody: Method {}
-    pub trait MethodWithoutResponseBody: Method {}
+    use super::{Method, MethodWithRequestBody, MethodWithResponseBody};
+    use super::{MethodWithoutRequestBody, MethodWithoutResponseBody};
 
     pub struct OPTIONS;
     pub struct GET;

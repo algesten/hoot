@@ -195,8 +195,10 @@ impl<'a, M: Method, V: Version> Request<'a, SEND_HEADERS, V, M, ()> {
 impl<'a, M: MethodWithRequestBody> Request<'a, SEND_HEADERS, HTTP_10, M, ()> {
     pub fn with_body(
         mut self,
-        length: u64,
+        length: impl TryInto<u64>,
     ) -> Result<Request<'a, SEND_BODY, HTTP_10, M, BODY_LENGTH>> {
+        let length: u64 = length.try_into().map_err(|_| HootError::BodyNotFinished)?;
+
         let mut w = self.out.writer();
         write!(w, "Content-Length: {}\r\n\r\n", length).or(OVERFLOW)?;
         w.commit();
@@ -218,8 +220,10 @@ impl<'a, M: MethodWithRequestBody> Request<'a, SEND_HEADERS, HTTP_10, M, ()> {
 impl<'a, M: MethodWithRequestBody> Request<'a, SEND_HEADERS, HTTP_11, M, ()> {
     pub fn with_body(
         mut self,
-        length: u64,
+        length: impl TryInto<u64>,
     ) -> Result<Request<'a, SEND_BODY, HTTP_11, M, BODY_LENGTH>> {
+        let length: u64 = length.try_into().map_err(|_| HootError::BodyNotFinished)?;
+
         let mut w = self.out.writer();
         write!(w, "Content-Length: {}\r\n\r\n", length).or(OVERFLOW)?;
         w.commit();

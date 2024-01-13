@@ -84,6 +84,9 @@ pub enum HootError {
 
     /// Url parsing error
     UrlError(UrlError),
+
+    /// Failed to get a TryInto<u64>.
+    NotU64,
 }
 
 pub(crate) static OVERFLOW: Result<()> = Err(HootError::OutputOverflow);
@@ -147,6 +150,7 @@ impl fmt::Display for HootError {
                 write!(f, "url: {}", v)?;
                 return Ok(());
             }
+            NotU64 => "not possible to convert to u64",
         };
 
         write!(f, "{}", s)
