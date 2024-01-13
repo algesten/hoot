@@ -4,9 +4,9 @@ use core::mem;
 use crate::body::{do_read_body, RecvBodyMode};
 use crate::error::Result;
 use crate::header::transmute_headers;
+use crate::types::state::*;
+use crate::types::*;
 use crate::util::{cast_buf_for_headers, LengthChecker};
-use crate::vars::private::*;
-use crate::vars::state::*;
 use crate::{BodyPart, CallState};
 use crate::{Header, HootError, HttpVersion, Method};
 
@@ -74,9 +74,7 @@ impl<S: State> Request<S> {
 
         // If we are awaiting a length, put a length checker in place
         if let RecvBodyMode::LengthDelimited(len) = mode {
-            if len > 0 {
-                self.state.recv_checker = Some(LengthChecker::new(len));
-            }
+            self.state.recv_checker = Some(LengthChecker::new(len));
         }
 
         Ok(RequestAttempt {

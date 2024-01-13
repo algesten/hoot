@@ -11,7 +11,7 @@ mod out;
 mod util;
 use util::LengthChecker;
 
-mod vars;
+pub mod types;
 
 mod parser;
 

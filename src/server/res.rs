@@ -6,11 +6,11 @@ use core::ops::Deref;
 use crate::error::{Result, OVERFLOW};
 use crate::header::check_and_output_header;
 use crate::out::Out;
+use crate::types::body::*;
+use crate::types::method::*;
+use crate::types::state::*;
+use crate::types::*;
 use crate::util::LengthChecker;
-use crate::vars::body::*;
-use crate::vars::method::*;
-use crate::vars::private::*;
-use crate::vars::state::*;
 use crate::{CallState, HootError, HttpVersion};
 
 pub enum ResponseVariant {

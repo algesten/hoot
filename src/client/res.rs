@@ -4,9 +4,9 @@ use core::str;
 
 use crate::body::{do_read_body, RecvBodyMode};
 use crate::header::transmute_headers;
+use crate::types::state::*;
+use crate::types::*;
 use crate::util::{cast_buf_for_headers, LengthChecker};
-use crate::vars::private::*;
-use crate::vars::state::*;
 use crate::BodyPart;
 use crate::{CallState, Result};
 use crate::{Header, HootError, HttpVersion};

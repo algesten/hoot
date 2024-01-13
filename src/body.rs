@@ -1,3 +1,4 @@
+use core::ops::Deref;
 use core::str;
 
 use crate::chunk::Dechunker;
@@ -28,7 +29,7 @@ pub fn do_read_body<'a, 'b>(
 
     Ok(BodyPart {
         input_used: bit.input_used,
-        output: bit.output,
+        data: bit.data,
         finished: bit.finished,
     })
 }
@@ -48,11 +49,11 @@ fn read_limit<'a, 'b>(
         finished = checker.complete();
     }
 
-    let output = &mut dst[..input_used];
-    output.copy_from_slice(&src[..input_used]);
+    let data = &mut dst[..input_used];
+    data.copy_from_slice(&src[..input_used]);
     Ok(BodyPart {
         input_used,
-        output,
+        data,
         finished,
     })
 }
@@ -64,19 +65,19 @@ fn read_chunked<'a>(state: &mut CallState, src: &[u8], dst: &'a mut [u8]) -> Res
     let dechunker = state.dechunker.as_mut().unwrap();
     let (input_used, produced_output) = dechunker.parse_input(src, dst)?;
 
-    let output = &mut dst[..produced_output];
+    let data = &mut dst[..produced_output];
     let finished = dechunker.is_ended();
 
     Ok(BodyPart {
         input_used,
-        output,
+        data,
         finished,
     })
 }
 
 pub struct BodyPart<'b> {
     pub(crate) input_used: usize,
-    pub(crate) output: &'b [u8],
+    pub(crate) data: &'b [u8],
     pub(crate) finished: bool,
 }
 
@@ -85,8 +86,8 @@ impl BodyPart<'_> {
         self.input_used
     }
 
-    pub fn output(&self) -> &[u8] {
-        self.output
+    pub fn data(&self) -> &[u8] {
+        self.data
     }
 
     pub fn is_finished(&self) -> bool {
@@ -98,9 +99,17 @@ impl BodyPart<'_> {
     pub(crate) fn empty() -> Self {
         BodyPart {
             input_used: 0,
-            output: &[],
+            data: &[],
             finished: false,
         }
+    }
+}
+
+impl Deref for BodyPart<'_> {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
     }
 }
 
