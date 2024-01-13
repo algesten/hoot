@@ -1,3 +1,5 @@
+//! Type state variables
+
 #![allow(private_bounds)]
 
 use crate::HttpVersion;
