@@ -1,6 +1,7 @@
+//! hoot based library to emulate httpbin
 //!
+//! This is work in progress!
 
-use error::Error;
 use hoot::types;
 use hoot::types::state::{SEND_HEADERS, SEND_STATUS};
 use hoot::{server::*, Header, Method, Url};
@@ -16,6 +17,7 @@ use buffer::InputBuffer;
 
 mod buffer;
 mod error;
+pub use error::Error;
 
 const BUFFER_SIZE: usize = 1024;
 
@@ -35,7 +37,7 @@ pub(crate) struct Answer {
 pub(crate) struct Body {
     status: u16,
     text: &'static str,
-    query: HashMap<String, Arg>,
+    // query: HashMap<String, Arg>,
     headers: HashMap<String, String>,
     url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -44,10 +46,23 @@ pub(crate) struct Body {
     json: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Serialize)]
-pub(crate) enum Arg {
-    Single(String),
-    Multiple(Vec<String>),
+// #[derive(Debug, Serialize)]
+// pub(crate) enum Arg {
+//     Single(String),
+//     Multiple(Vec<String>),
+// }
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Mode {
+    Get,
+    Post,
+    Put,
+    Headers,
+    Status(u16),
+    Bytes(usize),
+    Delay(u64),
+    Charset,
+    Abort,
 }
 
 pub fn serve_single(i: impl io::Read, mut o: impl io::Write, base_url: &str) -> Result<(), Error> {
@@ -67,17 +82,6 @@ pub fn serve_single(i: impl io::Read, mut o: impl io::Write, base_url: &str) -> 
         text: "Ok",
         ..Default::default()
     };
-
-    enum Mode {
-        Get,
-        Post,
-        Put,
-        Headers,
-        Status(u16),
-        Bytes(usize),
-        Delay(u64),
-        Abort,
-    }
 
     fn send_400(a: &mut Answer) -> Mode {
         a.status = 400;
@@ -118,13 +122,20 @@ pub fn serve_single(i: impl io::Read, mut o: impl io::Write, base_url: &str) -> 
         // Fill out the body with headers, URL etc.
         answer.fill_body(headers, &base, path)?;
 
-        let mode = if path == "/get" && method == Method::GET {
+        let mode = if path == "/" {
+            match method {
+                Method::POST => Mode::Post,
+                Method::PUT => Mode::Put,
+                Method::HEAD => Mode::Headers,
+                _ => Mode::Get,
+            }
+        } else if path.starts_with("/get") && method == Method::GET {
             Mode::Get
-        } else if path == "/post" && method == Method::POST {
+        } else if path.starts_with("/post") && method == Method::POST {
             Mode::Post
-        } else if path == "/put" && method == Method::PUT {
+        } else if path.starts_with("/put") && method == Method::PUT {
             Mode::Put
-        } else if path == "/headers" {
+        } else if path.starts_with("/headers") {
             Mode::Headers
         } else if path.starts_with("/status/") {
             match path[8..].parse() {
@@ -141,6 +152,8 @@ pub fn serve_single(i: impl io::Read, mut o: impl io::Write, base_url: &str) -> 
                 Ok(v) => Mode::Delay(v),
                 Err(_) => send_400(&mut answer),
             }
+        } else if path.starts_with("/charset/iso") {
+            Mode::Charset
         } else {
             answer.body = None;
             answer.status = 404;
@@ -202,15 +215,16 @@ pub fn serve_single(i: impl io::Read, mut o: impl io::Write, base_url: &str) -> 
     let resp = req.into_response()?;
 
     match resp {
-        ResponseVariant::Get(r) => send_response(r, &mut buf, answer, o),
-        ResponseVariant::Post(r) => send_response(r, &mut buf, answer, o),
-        ResponseVariant::Put(r) => send_response(r, &mut buf, answer, o),
-        ResponseVariant::Patch(r) => send_response(r, &mut buf, answer, o),
-        ResponseVariant::Delete(r) => send_response(r, &mut buf, answer, o),
+        ResponseVariant::Get(r) => send_response(r, &mut buf, answer, o, mode),
+        ResponseVariant::Post(r) => send_response(r, &mut buf, answer, o, mode),
+        ResponseVariant::Put(r) => send_response(r, &mut buf, answer, o, mode),
+        ResponseVariant::Patch(r) => send_response(r, &mut buf, answer, o, mode),
+        ResponseVariant::Delete(r) => send_response(r, &mut buf, answer, o, mode),
+        ResponseVariant::Options(r) => send_response(r, &mut buf, answer, o, mode),
         ResponseVariant::Head(r) => {
             // No body for HEAD. Just send the start.
             let resp = Response::resume(r, &mut buf);
-            let output = send_response_start(resp, &answer)?.flush();
+            let output = send_response_start(resp, &answer, "application/json")?.flush();
 
             o.write_all(&output)?;
             Ok(())
@@ -224,6 +238,7 @@ fn send_response<M: types::MethodWithResponseBody>(
     buf: &mut [u8],
     mut answer: Answer,
     mut o: impl io::Write,
+    mode: Mode,
 ) -> Result<(), Error> {
     // The bytes to write to the output.
     let body_bytes = match answer.body.take() {
@@ -234,7 +249,13 @@ fn send_response<M: types::MethodWithResponseBody>(
 
     let resp = Response::resume(token, buf);
 
-    let output = send_response_start(resp, &answer)?
+    let ctype = if mode == Mode::Charset {
+        "text/html; charset=ISO-8859-1"
+    } else {
+        "application/json"
+    };
+
+    let output = send_response_start(resp, &answer, ctype)?
         // body with a known length
         .with_body(body_bytes.len())?
         .flush();
@@ -264,10 +285,11 @@ fn send_response<M: types::MethodWithResponseBody>(
 fn send_response_start<'a, M: types::Method>(
     resp: Response<'a, SEND_STATUS, M, ()>,
     answer: &Answer,
+    ctype: &'static str,
 ) -> Result<Response<'a, SEND_HEADERS, M, ()>, Error> {
     let resp = resp
         .send_status(answer.status, answer.text)?
-        .header("content-type", "application/json")?
+        .header("content-type", ctype)?
         .header("server", "hootbin")?
         .header("access-control-allow-origin", "*")?
         .header("access-control-allow-credentials", "true")?;

@@ -12,3 +12,5 @@ API that fulfil these criteria:
 * Correct - Encourage (or force) correct HTTP 1.1 usage.
 
 The library has both a client and a server implementation.
+
+License: MIT OR Apache-2.0
