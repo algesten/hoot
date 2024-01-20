@@ -7,6 +7,7 @@ pub struct InputBuffer<T> {
     inner: Option<T>,
     buffer: [u8; BUFFER_SIZE],
     len: usize,
+    did_consume: bool,
 }
 
 impl<T: io::Read> InputBuffer<T> {
@@ -15,6 +16,7 @@ impl<T: io::Read> InputBuffer<T> {
             inner: Some(inner),
             buffer: [0; BUFFER_SIZE],
             len: 0,
+            did_consume: false,
         }
     }
 
@@ -22,6 +24,16 @@ impl<T: io::Read> InputBuffer<T> {
         let Some(inner) = self.inner.as_mut() else {
             return Ok(());
         };
+
+        if self.did_consume {
+            self.did_consume = false;
+            if self.len > 0 {
+                // we consumed and there is still content in the buffer,
+                // avoid reading from inner again since that might block
+                // if we already got enough in the buffer.
+                return Ok(());
+            }
+        }
 
         let (_, unused) = self.buffer.split_at_mut(self.len);
         let amount = inner.read(unused)?;
@@ -45,6 +57,7 @@ impl<T: io::Read> InputBuffer<T> {
         }
         self.buffer.copy_within(amount..self.len, 0);
         self.len -= amount;
+        self.did_consume = true;
     }
 }
 
