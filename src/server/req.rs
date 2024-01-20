@@ -37,6 +37,8 @@ impl<S: State> Request<S> {
         input: &'a [u8],
         buf: &'b mut [u8],
     ) -> Result<RequestAttempt<'a, 'b>> {
+        trace!("Try read request");
+
         let already_read_request = self.state.recv_body_mode.is_some();
 
         // Request/headers reads only work once.
@@ -49,7 +51,10 @@ impl<S: State> Request<S> {
 
         let input_used = match r.parse(input)? {
             httparse::Status::Complete(v) => v,
-            httparse::Status::Partial => return Ok(RequestAttempt::empty()),
+            httparse::Status::Partial => {
+                trace!("Read partial request");
+                return Ok(RequestAttempt::empty());
+            }
         };
 
         let method: Method = r.method.unwrap().try_into()?;
@@ -64,16 +69,22 @@ impl<S: State> Request<S> {
         };
         self.state.version = Some(ver);
 
+        trace!("Read complete request: {:?} {} {:?}", method, path, ver);
+
         let line = Line(method, path, ver);
 
         // Derive body mode from knowledge this far.
         let http10 = ver == HttpVersion::Http10;
         let headers = transmute_headers(r.headers);
+        trace!("Headers: {:?}", headers);
+
         let mode = RecvBodyMode::for_request(http10, method, headers)?;
         self.state.recv_body_mode = Some(mode);
+        trace!("Body mode: {:?}", mode);
 
         // If we are awaiting a length, put a length checker in place
         if let RecvBodyMode::LengthDelimited(len) = mode {
+            trace!("Set body length checker: {}", len);
             self.state.recv_checker = Some(LengthChecker::new(len));
         }
 

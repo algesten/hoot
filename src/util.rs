@@ -1,3 +1,4 @@
+use core::fmt;
 use core::mem;
 use httparse::{Header, EMPTY_HEADER};
 
@@ -89,17 +90,11 @@ impl LengthChecker {
     }
 }
 
-#[cfg(feature = "std")]
-mod std_impls {
-    use super::*;
-    use std::fmt;
-
-    impl fmt::Debug for LengthChecker {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            f.debug_struct("LengthChecker")
-                .field("handled", &self.handled)
-                .field("expected", &self.expected)
-                .finish()
-        }
+impl fmt::Debug for LengthChecker {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LengthChecker")
+            .field("handled", &self.handled)
+            .field("expected", &self.expected)
+            .finish()
     }
 }

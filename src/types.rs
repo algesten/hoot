@@ -4,7 +4,9 @@
 
 use crate::HttpVersion;
 
-trait Private {}
+pub(crate) trait Private {
+    fn state_name() -> &'static str;
+}
 pub trait State: Private {}
 
 pub trait Version: Private {
@@ -39,11 +41,19 @@ pub trait MethodWithoutResponseBody: Method {}
 
 pub trait BodyType: Private {}
 
-impl Private for () {}
+impl Private for () {
+    fn state_name() -> &'static str {
+        return "*";
+    }
+}
 
 macro_rules! impl_private {
     ($trait:ty, $target:ty) => {
-        impl crate::types::Private for $target {}
+        impl crate::types::Private for $target {
+            fn state_name() -> &'static str {
+                stringify!($target)
+            }
+        }
         impl $trait for $target {}
     };
 }
@@ -94,14 +104,22 @@ pub mod version {
         }
     }
 
-    impl super::Private for HTTP_10 {}
+    impl super::Private for HTTP_10 {
+        fn state_name() -> &'static str {
+            "HTTP_10"
+        }
+    }
     impl Version for HTTP_10 {
         fn version() -> HttpVersion {
             HttpVersion::Http10
         }
     }
 
-    impl super::Private for HTTP_11 {}
+    impl super::Private for HTTP_11 {
+        fn state_name() -> &'static str {
+            "HTTP_11"
+        }
+    }
     impl Version for HTTP_11 {
         fn version() -> HttpVersion {
             HttpVersion::Http11
@@ -133,14 +151,22 @@ pub mod method {
     impl_private!(Method, TRACE);
     impl_private!(Method, PATCH);
 
-    impl super::Private for HEAD {}
+    impl super::Private for HEAD {
+        fn state_name() -> &'static str {
+            "HEAD"
+        }
+    }
     impl Method for HEAD {
         fn is_head() -> bool {
             true
         }
     }
 
-    impl super::Private for CONNECT {}
+    impl super::Private for CONNECT {
+        fn state_name() -> &'static str {
+            "CONNECT"
+        }
+    }
     impl Method for CONNECT {
         fn is_connect() -> bool {
             true

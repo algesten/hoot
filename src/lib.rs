@@ -14,6 +14,9 @@
 // For tests we use std.
 #![cfg_attr(all(not(feature = "std"), not(test)), no_std)]
 
+#[macro_use]
+extern crate log;
+
 mod chunk;
 use chunk::Dechunker;
 
@@ -42,7 +45,7 @@ pub use body::BodyPart;
 use body::RecvBodyMode;
 
 mod url;
-pub use url::Url;
+pub use url::{Url, UrlError};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum HttpVersion {
@@ -110,33 +113,29 @@ pub(crate) struct CallState {
     pub did_read_to_end: bool,
 }
 
-#[cfg(feature = "std")]
-mod std_impls {
-    use super::*;
-    use std::fmt;
+use core::fmt;
 
-    impl fmt::Debug for HttpVersion {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            match self {
-                Self::Http10 => write!(f, "Http10"),
-                Self::Http11 => write!(f, "Http11"),
-            }
+impl fmt::Debug for HttpVersion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Http10 => write!(f, "Http10"),
+            Self::Http11 => write!(f, "Http11"),
         }
     }
+}
 
-    impl fmt::Debug for Method {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            match self {
-                Self::OPTIONS => write!(f, "OPTIONS"),
-                Self::GET => write!(f, "GET"),
-                Self::POST => write!(f, "POST"),
-                Self::PUT => write!(f, "PUT"),
-                Self::DELETE => write!(f, "DELETE"),
-                Self::HEAD => write!(f, "HEAD"),
-                Self::TRACE => write!(f, "TRACE"),
-                Self::CONNECT => write!(f, "CONNECT"),
-                Self::PATCH => write!(f, "PATCH"),
-            }
+impl fmt::Debug for Method {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::OPTIONS => write!(f, "OPTIONS"),
+            Self::GET => write!(f, "GET"),
+            Self::POST => write!(f, "POST"),
+            Self::PUT => write!(f, "PUT"),
+            Self::DELETE => write!(f, "DELETE"),
+            Self::HEAD => write!(f, "HEAD"),
+            Self::TRACE => write!(f, "TRACE"),
+            Self::CONNECT => write!(f, "CONNECT"),
+            Self::PATCH => write!(f, "PATCH"),
         }
     }
 }

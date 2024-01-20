@@ -1,3 +1,4 @@
+use core::fmt;
 use core::marker::PhantomData;
 use core::mem;
 use core::str;
@@ -205,19 +206,13 @@ impl Response<RECV_BODY> {
     }
 }
 
-#[cfg(feature = "std")]
-mod std_impls {
-    use super::*;
-    use std::fmt;
-
-    impl fmt::Debug for Status<'_> {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            f.debug_tuple("Status")
-                .field(&self.0)
-                .field(&self.1)
-                .field(&self.2)
-                .finish()
-        }
+impl fmt::Debug for Status<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Status")
+            .field(&self.0)
+            .field(&self.1)
+            .field(&self.2)
+            .finish()
     }
 }
 

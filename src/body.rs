@@ -1,3 +1,4 @@
+use core::fmt;
 use core::ops::Deref;
 use core::str;
 
@@ -11,6 +12,8 @@ pub fn do_read_body<'a, 'b>(
     src: &'a [u8],
     dst: &'b mut [u8],
 ) -> Result<BodyPart<'b>> {
+    trace!("Read body");
+
     // If we already read to completion, do not use any more input.
     if state.did_read_to_end {
         return Ok(BodyPart::empty());
@@ -47,9 +50,13 @@ fn read_limit<'a, 'b>(
         let checker = state.recv_checker.as_mut().unwrap();
         checker.append(input_used, HootError::RecvMoreThanContentLength)?;
         finished = checker.complete();
+        trace!("Read body limited: {}", input_used);
+    } else {
+        trace!("Read body closed: {}", input_used);
     }
 
     let data = &mut dst[..input_used];
+
     data.copy_from_slice(&src[..input_used]);
     Ok(BodyPart {
         input_used,
@@ -67,6 +74,8 @@ fn read_chunked<'a>(state: &mut CallState, src: &[u8], dst: &'a mut [u8]) -> Res
 
     let data = &mut dst[..produced_output];
     let finished = dechunker.is_ended();
+
+    trace!("Read chunked: {}", input_used);
 
     Ok(BodyPart {
         input_used,
@@ -214,20 +223,12 @@ impl RecvBodyMode {
     }
 }
 
-#[cfg(feature = "std")]
-mod std_impls {
-    use super::*;
-    use std::fmt;
-
-    impl fmt::Debug for RecvBodyMode {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            match self {
-                Self::LengthDelimited(arg0) => {
-                    f.debug_tuple("LengthDelimited").field(arg0).finish()
-                }
-                Self::Chunked => write!(f, "Chunked"),
-                Self::CloseDelimited => write!(f, "CloseDelimited"),
-            }
+impl fmt::Debug for RecvBodyMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::LengthDelimited(arg0) => f.debug_tuple("LengthDelimited").field(arg0).finish(),
+            Self::Chunked => write!(f, "Chunked"),
+            Self::CloseDelimited => write!(f, "CloseDelimited"),
         }
     }
 }

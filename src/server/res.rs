@@ -60,6 +60,16 @@ pub struct Output<'a, S: State, M: Method, B: BodyType> {
 
 impl<'a, S: State, M: Method, B: BodyType> Response<'a, S, M, B> {
     fn transition<S2: State, M2: Method, B2: BodyType>(self) -> Response<'a, S2, M2, B2> {
+        trace!(
+            "Transition: {}/{}/{} -> {}/{}/{}",
+            S::state_name(),
+            M::state_name(),
+            B::state_name(),
+            S2::state_name(),
+            M2::state_name(),
+            B2::state_name(),
+        );
+
         // SAFETY: this only changes the type state of the PhantomData
         unsafe { mem::transmute(self) }
     }
@@ -73,6 +83,7 @@ impl<'a, S: State, M: Method, B: BodyType> Response<'a, S, M, B> {
     }
 
     pub fn flush(self) -> Output<'a, S, M, B> {
+        trace!("Flush");
         Output {
             token: ResumeToken {
                 typ: self.typ,
@@ -83,6 +94,12 @@ impl<'a, S: State, M: Method, B: BodyType> Response<'a, S, M, B> {
     }
 
     pub fn resume(token: ResumeToken<S, M, B>, buf: &'a mut [u8]) -> Response<'a, S, M, B> {
+        trace!(
+            "Resume in state {}/{}/{}",
+            S::state_name(),
+            M::state_name(),
+            B::state_name()
+        );
         Response {
             typ: token.typ,
             state: token.state,
@@ -103,6 +120,8 @@ impl<'a, M: Method> Response<'a, SEND_STATUS, M, ()> {
             HttpVersion::Http11 => "1.1",
         };
 
+        trace!("Send status: {} {} HTTP/{}", code, text, ver);
+
         let mut w = self.out.writer();
         write!(w, "HTTP/{} {} {}\r\n", ver, code, text).or(OVERFLOW)?;
         w.commit();
@@ -113,10 +132,12 @@ impl<'a, M: Method> Response<'a, SEND_STATUS, M, ()> {
 
 impl<'a, M: Method> Response<'a, SEND_HEADERS, M, ()> {
     pub fn header(self, name: &str, value: &str) -> Result<Self> {
+        trace!("Set header {}: {}", name, value);
         self.header_raw(name, value.as_bytes(), false)
     }
 
     pub fn header_bytes(self, name: &str, bytes: &[u8]) -> Result<Self> {
+        trace!("Set header bytes {}: {:?}", name, bytes);
         self.header_raw(name, bytes, false)
     }
 }
@@ -126,7 +147,9 @@ impl<'a, M: MethodWithResponseBody> Response<'a, SEND_HEADERS, M, ()> {
         mut self,
         length: impl TryInto<u64>,
     ) -> Result<Response<'a, SEND_BODY, M, BODY_LENGTH>> {
-        let length: u64 = length.try_into().map_err(|_| HootError::BodyNotFinished)?;
+        let length: u64 = length.try_into().map_err(|_| HootError::NotU64)?;
+
+        trace!("Length delimited body: {}", length);
 
         let mut w = self.out.writer();
         write!(w, "Content-Length: {}\r\n\r\n", length).or(OVERFLOW)?;
@@ -138,6 +161,8 @@ impl<'a, M: MethodWithResponseBody> Response<'a, SEND_HEADERS, M, ()> {
     }
 
     pub fn with_chunked(mut self) -> Result<Response<'a, SEND_BODY, M, BODY_CHUNKED>> {
+        trace!("Chunked body");
+
         let mut w = self.out.writer();
         write!(w, "Transfer-Encoding: chunked\r\n\r\n").or(OVERFLOW)?;
         w.commit();
@@ -146,6 +171,8 @@ impl<'a, M: MethodWithResponseBody> Response<'a, SEND_HEADERS, M, ()> {
     }
 
     pub fn without_body(mut self) -> Result<Response<'a, RECV_RESPONSE, M, ()>> {
+        trace!("Without body");
+
         let mut w = self.out.writer();
         write!(w, "\r\n").or(OVERFLOW)?;
         w.commit();
@@ -157,6 +184,8 @@ impl<'a, M: MethodWithResponseBody> Response<'a, SEND_HEADERS, M, ()> {
 impl<'a, M: MethodWithoutResponseBody> Response<'a, SEND_HEADERS, M, ()> {
     // TODO: Can we find a trait bound that allows us to call this without_body()?
     pub fn send(mut self) -> Result<Response<'a, ENDED, (), ()>> {
+        trace!("Without body");
+
         let mut w = self.out.writer();
         write!(w, "\r\n").or(OVERFLOW)?;
         w.commit();
@@ -176,6 +205,8 @@ impl<'a, M: MethodWithResponseBody> Response<'a, SEND_BODY, M, BODY_LENGTH> {
     }
 
     pub fn write_bytes(&mut self, bytes: &[u8]) -> Result<()> {
+        trace!("Write bytes len: {}", bytes.len());
+
         // This returns Err if we try to write more bytes than content-length.
         self.checker()
             .append(bytes.len(), HootError::SentMoreThanContentLength)?;
@@ -188,6 +219,8 @@ impl<'a, M: MethodWithResponseBody> Response<'a, SEND_BODY, M, BODY_LENGTH> {
     }
 
     pub fn finish(mut self) -> Result<Response<'a, ENDED, (), ()>> {
+        trace!("Body finished");
+
         // This returns Err if we have written less than content-length.
         self.checker()
             .assert_expected(HootError::SentLessThanContentLength)?;
@@ -198,6 +231,8 @@ impl<'a, M: MethodWithResponseBody> Response<'a, SEND_BODY, M, BODY_LENGTH> {
 
 impl<'a, M: MethodWithResponseBody> Response<'a, SEND_BODY, M, BODY_CHUNKED> {
     pub fn write_chunk(mut self, bytes: &[u8]) -> Result<Self> {
+        trace!("Write chunk len: {}", bytes.len());
+
         // Writing no bytes is ok. Ending the chunk writing is by doing the finish() call.
         if bytes.is_empty() {
             return Ok(self);
@@ -220,6 +255,8 @@ impl<'a, M: MethodWithResponseBody> Response<'a, SEND_BODY, M, BODY_CHUNKED> {
     }
 
     pub fn with_trailer(mut self) -> Result<Response<'a, SEND_TRAILER, M, BODY_CHUNKED>> {
+        trace!("With trailer");
+
         let mut w = self.out.writer();
         write!(w, "0\r\n").or(OVERFLOW)?;
         w.commit();
@@ -228,6 +265,8 @@ impl<'a, M: MethodWithResponseBody> Response<'a, SEND_BODY, M, BODY_CHUNKED> {
     }
 
     pub fn finish(mut self) -> Result<Response<'a, ENDED, (), ()>> {
+        trace!("Body chunks finished");
+
         let mut w = self.out.writer();
         write!(w, "0\r\n\r\n").or(OVERFLOW)?;
         w.commit();
@@ -239,14 +278,20 @@ impl<'a, M: MethodWithResponseBody> Response<'a, SEND_BODY, M, BODY_CHUNKED> {
 // TODO: ensure trailers are declared in a `Trailer: xxx` header.
 impl<'a, M: MethodWithResponseBody> Response<'a, SEND_TRAILER, M, BODY_CHUNKED> {
     pub fn trailer(self, name: &str, value: &str) -> Result<Self> {
+        trace!("Set trailer {}: {}", name, value);
+
         self.header_raw(name, value.as_bytes(), true)
     }
 
     pub fn trailer_bytes(self, name: &str, bytes: &[u8]) -> Result<Self> {
+        trace!("Set trailer bytes {}: {:?}", name, bytes);
+
         self.header_raw(name, bytes, true)
     }
 
     pub fn finish(mut self) -> Result<Response<'a, ENDED, (), ()>> {
+        trace!("Trailer finish");
+
         let mut w = self.out.writer();
         write!(w, "\r\n").or(OVERFLOW)?;
         w.commit();
