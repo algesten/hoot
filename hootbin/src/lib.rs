@@ -65,6 +65,10 @@ enum Mode {
     Abort,
 }
 
+/// Serve an HTTP (1.0 or 1.1) request.
+///
+/// The `base_url` is used for constructing redirects. It typically is the same
+/// as the `host` header.
 pub fn serve_single(i: impl io::Read, mut o: impl io::Write, base_url: &str) -> Result<(), Error> {
     // Buffer for reading the request into.
     let mut buf = [0_u8; BUFFER_SIZE];
