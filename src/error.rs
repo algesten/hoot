@@ -85,7 +85,7 @@ pub enum HootError {
     /// Url parsing error
     UrlError(UrlError),
 
-    /// Failed to get a TryInto<u64>.
+    /// Failed to get a `TryInto<u64>`.
     NotU64,
 }
 
