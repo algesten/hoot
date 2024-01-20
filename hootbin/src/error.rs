@@ -1,7 +1,7 @@
 use std::io;
 use std::str::Utf8Error;
 
-use hoot::HootError;
+use hoot::{HootError, UrlError};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -17,4 +17,18 @@ pub enum Error {
 
     #[error("unhandled method")]
     UnhandledMethod,
+
+    #[error("url: {0}")]
+    UrlError(#[from] UrlError),
+}
+
+impl From<Error> for io::Error {
+    fn from(value: Error) -> Self {
+        if let Error::Io(e) = value {
+            return e;
+        } else {
+            let s = value.to_string();
+            io::Error::new(io::ErrorKind::Other, s)
+        }
+    }
 }

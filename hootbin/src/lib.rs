@@ -50,12 +50,11 @@ pub(crate) enum Arg {
     Multiple(Vec<String>),
 }
 
-pub fn serve_single(i: impl io::Read, mut o: impl io::Write, base: Url) -> Result<(), Error> {
+pub fn serve_single(i: impl io::Read, mut o: impl io::Write, base_url: &str) -> Result<(), Error> {
     // Buffer for reading the request into.
     let mut buf = [0_u8; BUFFER_SIZE];
 
-    // In case the user passed in more than the base.
-    let base = base.base();
+    let base = Url::parse_str(base_url)?.base();
 
     // Helper around the input to peek until we have an entire request
     // with all the headers.
@@ -157,6 +156,10 @@ pub fn serve_single(i: impl io::Read, mut o: impl io::Write, base: Url) -> Resul
     let mut req = req.proceed();
 
     loop {
+        if req.is_finished() {
+            break;
+        }
+
         // Read more data from the inner io::Read.
         input.fill_more()?;
 
@@ -171,10 +174,6 @@ pub fn serve_single(i: impl io::Read, mut o: impl io::Write, base: Url) -> Resul
 
         // Mark used body input as consumed.
         input.consume(body_part.input_used());
-
-        if body_part.is_finished() {
-            break;
-        }
     }
 
     match mode {
@@ -389,9 +388,7 @@ mod test {
         let src: &[u8] = b"GET /get HTTP/1.1\r\nHost:myhost.com\r\n\r\n";
         let mut cur = Cursor::new(Vec::new());
 
-        let base = Url::parse_str("https://myhost.com").unwrap();
-
-        serve_single(src, &mut cur, base).unwrap();
+        serve_single(src, &mut cur, "https://myhost.com").unwrap();
 
         let output = cur.into_inner();
         let s = String::from_utf8(output).unwrap();
