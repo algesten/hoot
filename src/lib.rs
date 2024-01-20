@@ -118,8 +118,8 @@ use core::fmt;
 impl fmt::Debug for HttpVersion {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Http10 => write!(f, "Http10"),
-            Self::Http11 => write!(f, "Http11"),
+            Self::Http10 => write!(f, "HTTP/1.0"),
+            Self::Http11 => write!(f, "HTTP/1.1"),
         }
     }
 }
