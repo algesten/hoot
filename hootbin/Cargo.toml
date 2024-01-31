@@ -8,6 +8,9 @@ keywords = ["http", "server", "web"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/algesten/hoot"
 
+# MSRV
+rust-version = "1.61"
+
 [dependencies]
 fastrand = "2.0.1"
 hoot = { path = "..", version = "0.1.2", features = ["std"] }

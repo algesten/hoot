@@ -21,8 +21,9 @@ impl<T: io::Read> InputBuffer<T> {
     }
 
     pub fn fill_more(&mut self) -> io::Result<()> {
-        let Some(inner) = self.inner.as_mut() else {
-            return Ok(());
+        let inner = match self.inner.as_mut() {
+            Some(v) => v,
+            None => return Ok(()),
         };
 
         if self.did_consume {

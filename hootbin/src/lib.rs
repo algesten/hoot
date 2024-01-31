@@ -165,7 +165,12 @@ pub fn serve_single(i: impl io::Read, mut o: impl io::Write, base_url: &str) -> 
             Mode::Abort
         };
 
+        // This is an MSRV 1.61 thing. The lint was removed in later
+        // Rust and is not actually problem.
+        #[allow(renamed_and_removed_lints)]
+        #[allow(mutable_borrow_reservation_conflict)]
         input.consume(attempt.input_used());
+
         break (mode, method.has_request_body());
     };
 
@@ -321,8 +326,9 @@ impl Answer {
     }
 
     fn set_status_on_body(&mut self) {
-        let Some(body) = &mut self.body else {
-            return;
+        let body = match &mut self.body {
+            Some(v) => v,
+            None => return,
         };
         body.status = self.status;
         body.text = self.text;
@@ -334,8 +340,9 @@ impl Answer {
 
     fn attempt_parse_body_data(&mut self) {
         // If we don't have a Body struct, we will not do anything.
-        let Some(body) = &mut self.body else {
-            return;
+        let body = match &mut self.body {
+            Some(v) => v,
+            None => return,
         };
 
         // Take the data since we will do our best to not allocate more than we need to.
@@ -357,8 +364,9 @@ impl Answer {
 
     fn generate_body_data(&mut self, amount: usize) {
         // If we don't have a Body struct, we will not do anything.
-        let Some(body) = &mut self.body else {
-            return;
+        let body = match &mut self.body {
+            Some(v) => v,
+            None => return,
         };
 
         const CHARS: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
