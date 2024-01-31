@@ -1,12 +1,14 @@
 //! Type state variables
 
-#![allow(private_bounds)]
-
 use crate::HttpVersion;
+use private::Private;
 
-pub(crate) trait Private {
-    fn state_name() -> &'static str;
+mod private {
+    pub trait Private {
+        fn state_name() -> &'static str;
+    }
 }
+
 pub trait State: Private {}
 
 pub trait Version: Private {
