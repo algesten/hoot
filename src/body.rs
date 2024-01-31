@@ -7,7 +7,7 @@ use crate::error::Result;
 use crate::util::compare_lowercase_ascii;
 use crate::{CallState, Header, HootError, Method};
 
-pub fn do_read_body<'a, 'b>(
+pub(crate) fn do_read_body<'a, 'b>(
     state: &mut CallState,
     src: &'a [u8],
     dst: &'b mut [u8],

@@ -57,7 +57,7 @@ pub(crate) fn transmute_headers<'a, 'b>(headers: &'b [InnerHeader<'a>]) -> &'b [
     unsafe { mem::transmute(headers) }
 }
 
-pub fn check_and_output_header(
+pub(crate) fn check_and_output_header(
     mut w: Writer,
     version: HttpVersion,
     name: &str,

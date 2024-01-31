@@ -60,8 +60,9 @@ impl Dechunker {
     fn read_size(&mut self, src: &[u8], pos: &mut Pos) -> Result<bool> {
         let src = &src[pos.index_in..];
 
-        let Some(i) = find_crlf(src) else {
-            return Ok(false);
+        let i = match find_crlf(src) {
+            Some(v) => v,
+            None => return Ok(false),
         };
 
         let len_end = src.iter().position(|c| *c == b';').unwrap_or(i);
@@ -82,8 +83,9 @@ impl Dechunker {
         let src = &src[pos.index_in..];
         let dst = &mut dst[pos.index_out..];
 
-        let Self::Chunk(left) = self else {
-            unreachable!();
+        let left = match self {
+            Self::Chunk(v) => v,
+            _ => unreachable!(),
         };
 
         // Read the smallest amount of input/output or length left of chunk.
@@ -104,8 +106,9 @@ impl Dechunker {
     fn read_crlf(&mut self, src: &[u8], pos: &mut Pos) -> Result<bool> {
         let src = &src[pos.index_in..];
 
-        let Some(i) = find_crlf(src) else {
-            return Ok(false);
+        let i = match find_crlf(src) {
+            Some(v) => v,
+            None => return Ok(false),
         };
 
         if i > 0 {

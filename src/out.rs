@@ -77,8 +77,9 @@ impl<'b, 'a> Writer<'b, 'a> {
     // (&[w], &mut [e])
     pub fn split_and_borrow(&mut self) -> (&[u8], &mut [u8]) {
         let s = self.out.pos;
-        let Some(i) = self.inc else {
-            return (&[], &mut []);
+        let i = match self.inc {
+            Some(v) => v,
+            None => return (&[], &mut []),
         };
         let e = s + i;
 

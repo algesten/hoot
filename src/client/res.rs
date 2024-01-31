@@ -182,8 +182,9 @@ impl Response<RECV_BODY> {
     pub fn is_finished(&self) -> bool {
         use RecvBodyMode::*;
 
-        let Some(mode) = self.state.recv_body_mode else {
-            return false;
+        let mode = match self.state.recv_body_mode {
+            Some(v) => v,
+            None => return false,
         };
 
         match mode {

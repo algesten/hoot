@@ -22,7 +22,11 @@ pub(crate) fn parse_headers<'a, 'b>(src: &'a [u8], dst: &'b mut [u8]) -> Result<
 pub(crate) fn find_crlf(b: &[u8]) -> Option<usize> {
     let cr = b.iter().position(|c| *c == b'\r')?;
     let maybe_lf = b.get(cr + 1)?;
-    (*maybe_lf == b'\n').then_some(cr)
+    if *maybe_lf == b'\n' {
+        Some(cr)
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
