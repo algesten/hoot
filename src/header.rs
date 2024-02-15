@@ -11,20 +11,18 @@ use crate::util::compare_lowercase_ascii;
 use crate::{HootError, HttpVersion};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub struct Header<'a> {
-    name: &'a str,
-    value: &'a [u8],
-}
+#[repr(transparent)]
+pub struct Header<'a>(InnerHeader<'a>);
 
 impl<'a> Header<'a> {
     #[inline(always)]
     pub fn name(&self) -> &str {
-        self.name
+        self.0.name
     }
 
     #[inline(always)]
     pub fn try_value(&self) -> Option<&str> {
-        str::from_utf8(self.value).ok()
+        str::from_utf8(self.0.value).ok()
     }
 
     #[inline(always)]
@@ -34,18 +32,18 @@ impl<'a> Header<'a> {
 
     #[inline(always)]
     pub fn value_raw(&self) -> &[u8] {
-        self.value
+        self.0.value
     }
 }
 
 impl<'a> fmt::Debug for Header<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut f = f.debug_struct("Header");
-        f.field("name", &self.name);
+        f.field("name", &self.0.name);
         if let Some(value) = self.try_value() {
             f.field("value", &value);
         } else {
-            f.field("value", &self.value);
+            f.field("value", &self.0.value);
         }
         f.finish()
     }
@@ -53,7 +51,7 @@ impl<'a> fmt::Debug for Header<'a> {
 
 pub(crate) fn transmute_headers<'a, 'b>(headers: &'b [InnerHeader<'a>]) -> &'b [Header<'a>] {
     // SAFETY: Our goal is to have hoot::Header be structurally the same
-    // as httparse::Header. This is asserted by the test below.
+    // as httparse::Header. This is guarenteed by #[repr(transparent)].
     unsafe { mem::transmute(headers) }
 }
 
@@ -147,17 +145,4 @@ fn check_headers(name: &str, forbidden: &[&str], err: HootError) -> Result<()> {
     }
 
     Ok(())
-}
-#[cfg(test)]
-mod test {
-    use super::*;
-    use memoffset::offset_of;
-
-    #[test]
-    fn assert_httparse_header_transmutability() {
-        assert_eq!(mem::size_of::<Header>(), mem::size_of::<InnerHeader>());
-        assert_eq!(mem::align_of::<Header>(), mem::align_of::<InnerHeader>());
-        assert_eq!(offset_of!(Header, name), offset_of!(InnerHeader, name));
-        assert_eq!(offset_of!(Header, value), offset_of!(InnerHeader, value));
-    }
 }

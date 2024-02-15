@@ -1,6 +1,5 @@
 use core::fmt::Write;
 use core::marker::PhantomData;
-use core::mem;
 use core::ops::Deref;
 
 use crate::error::{Result, OVERFLOW};
@@ -47,9 +46,10 @@ pub struct ResumeToken<S: State, M: Method, B: BodyType> {
 
 impl ResumeToken<(), (), ()> {
     pub(crate) fn new<M: Method>(state: CallState) -> ResumeToken<SEND_STATUS, M, ()> {
-        let typ: Typ<(), (), ()> = Typ::default();
-        // Safety: This only changes the type state of the Typ.
-        unsafe { mem::transmute(ResumeToken { typ, state }) }
+        ResumeToken {
+            typ: Typ(PhantomData, PhantomData, PhantomData),
+            state,
+        }
     }
 }
 
@@ -70,8 +70,11 @@ impl<'a, S: State, M: Method, B: BodyType> Response<'a, S, M, B> {
             B2::state_name(),
         );
 
-        // SAFETY: this only changes the type state of the PhantomData
-        unsafe { mem::transmute(self) }
+        Response {
+            typ: Typ(PhantomData, PhantomData, PhantomData),
+            state: self.state,
+            out: self.out,
+        }
     }
 
     fn header_raw(mut self, name: &str, bytes: &[u8], trailer: bool) -> Result<Self> {
