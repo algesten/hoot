@@ -1,6 +1,5 @@
 use core::fmt;
 use core::marker::PhantomData;
-use core::mem;
 use core::str;
 
 use crate::body::{do_read_body, RecvBodyMode};
@@ -43,8 +42,10 @@ impl Response<()> {
 
 impl<S: State> Response<S> {
     fn transition<S2: State>(self) -> Response<S2> {
-        // SAFETY: this only changes the type state of the PhantomData
-        unsafe { mem::transmute(self) }
+        Response {
+            _typ: PhantomData,
+            state: self.state,
+        }
     }
 
     fn do_try_read_response<'a, 'b>(

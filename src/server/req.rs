@@ -1,5 +1,4 @@
 use core::marker::PhantomData;
-use core::mem;
 
 use crate::body::{do_read_body, RecvBodyMode};
 use crate::error::Result;
@@ -28,8 +27,10 @@ impl Request<()> {
 
 impl<S: State> Request<S> {
     fn transition<S2: State>(self) -> Request<S2> {
-        // SAFETY: this only changes the type state of the PhantomData
-        unsafe { mem::transmute(self) }
+        Request {
+            typ: PhantomData,
+            state: self.state,
+        }
     }
 
     fn do_try_read_request<'a, 'b>(
