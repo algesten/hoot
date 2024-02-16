@@ -5,7 +5,6 @@
 use hoot::types;
 use hoot::types::state::{SEND_HEADERS, SEND_STATUS};
 use hoot::{server::*, Header, Method, Url};
-use serde::Serialize;
 use std::collections::HashMap;
 use std::iter::repeat_with;
 use std::mem;
@@ -33,7 +32,8 @@ pub(crate) struct Answer {
 }
 
 /// Serialized to JSON as response body.
-#[derive(Debug, Default, Serialize)]
+#[cfg(feature = "json")]
+#[derive(Debug, Default, serde::Serialize)]
 pub(crate) struct Body {
     status: u16,
     text: &'static str,
@@ -43,7 +43,18 @@ pub(crate) struct Body {
     #[serde(skip_serializing_if = "Option::is_none")]
     data: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    json: Option<serde_json::Value>,
+    json: Option<String>,
+}
+
+#[derive(Debug, Default)]
+#[cfg(not(feature = "json"))]
+pub(crate) struct Body {
+    status: u16,
+    text: &'static str,
+    // query: HashMap<String, Arg>,
+    headers: HashMap<String, String>,
+    url: String,
+    data: Option<String>,
 }
 
 // #[derive(Debug, Serialize)]
@@ -251,6 +262,9 @@ fn send_response<M: types::MethodWithResponseBody>(
 ) -> Result<(), Error> {
     // The bytes to write to the output.
     let body_bytes = match answer.body.take() {
+        #[cfg(not(feature = "serde"))]
+        Some(_) => vec![],
+        #[cfg(feature = "serde")]
         // This unwrap is ok, because our Body should _definitely_ be serializable.
         Some(body) => serde_json::to_vec_pretty(&body).unwrap(),
         None => vec![],
@@ -355,8 +369,9 @@ impl Answer {
         };
 
         // Attempt to interpret the body as json.
+        #[cfg(feature = "json")]
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&string) {
-            body.json = Some(json);
+            body.json = Some(serde_json::to_string(&json).unwrap());
         }
 
         body.data = Some(string);
