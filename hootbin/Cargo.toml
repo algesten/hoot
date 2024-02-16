@@ -11,17 +11,9 @@ repository = "https://github.com/algesten/hoot"
 # MSRV
 rust-version = "1.61"
 
-[features]
-# Without the feature json, this library is completely useless,
-# but it's here to allow compiling the lib without serde/serde_json
-default = ["json"]
-json = ["dep:serde", "dep:serde_json"]
-
 [dependencies]
 fastrand = "2.0.1"
 hoot = { path = "..", version = "0.1.4", features = ["std"] }
 thiserror = "1.0.56"
-
-# With feature "json"
-serde = { version = "1.0.193", features = ["derive"], optional = true }
-serde_json = { version = "1.0.111", optional = true }
+serde = { version = "1.0.193", features = ["derive"] }
+serde_json = { version = "1.0.111" }

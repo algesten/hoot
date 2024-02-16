@@ -32,7 +32,6 @@ pub(crate) struct Answer {
 }
 
 /// Serialized to JSON as response body.
-#[cfg(feature = "json")]
 #[derive(Debug, Default, serde::Serialize)]
 pub(crate) struct Body {
     status: u16,
@@ -44,17 +43,6 @@ pub(crate) struct Body {
     data: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     json: Option<String>,
-}
-
-#[derive(Debug, Default)]
-#[cfg(not(feature = "json"))]
-pub(crate) struct Body {
-    status: u16,
-    text: &'static str,
-    // query: HashMap<String, Arg>,
-    headers: HashMap<String, String>,
-    url: String,
-    data: Option<String>,
 }
 
 // #[derive(Debug, Serialize)]
@@ -262,9 +250,6 @@ fn send_response<M: types::MethodWithResponseBody>(
 ) -> Result<(), Error> {
     // The bytes to write to the output.
     let body_bytes = match answer.body.take() {
-        #[cfg(not(feature = "serde"))]
-        Some(_) => vec![],
-        #[cfg(feature = "serde")]
         // This unwrap is ok, because our Body should _definitely_ be serializable.
         Some(body) => serde_json::to_vec_pretty(&body).unwrap(),
         None => vec![],
@@ -369,7 +354,6 @@ impl Answer {
         };
 
         // Attempt to interpret the body as json.
-        #[cfg(feature = "json")]
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&string) {
             body.json = Some(serde_json::to_string(&json).unwrap());
         }
@@ -434,7 +418,7 @@ mod test {
 
     #[test]
     fn test_io() {
-        let src: &[u8] = b"GET /get HTTP/1.1\r\nHost:myhost.com\r\n\r\n";
+        let src: &[u8] = b"GET /get?success HTTP/1.1\r\nHost:myhost.com\r\n\r\n";
         let mut cur = Cursor::new(Vec::new());
 
         serve_single(src, &mut cur, "https://myhost.com").unwrap();
