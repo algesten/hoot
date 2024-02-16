@@ -19,7 +19,7 @@ json = ["dep:serde", "dep:serde_json"]
 
 [dependencies]
 fastrand = "2.0.1"
-hoot = { path = "..", version = "0.1.3", features = ["std"] }
+hoot = { path = "..", version = "0.1.4", features = ["std"] }
 thiserror = "1.0.56"
 
 # With feature "json"
