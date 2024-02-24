@@ -6,4 +6,5 @@ members = [
         "hoot",
         "hootbin",
         "hooturl",
+        "usrv",
 ]
