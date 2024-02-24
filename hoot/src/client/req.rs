@@ -9,9 +9,9 @@ use crate::types::body::*;
 use crate::types::method::*;
 use crate::types::state::*;
 use crate::types::version::*;
-use crate::types::*;
 use crate::util::LengthChecker;
 use crate::Method as M;
+use crate::{types::*, BodyWriter};
 use crate::{CallState, HttpVersion};
 use crate::{HootError, Result};
 
@@ -39,7 +39,7 @@ pub struct ResumeToken<S: State, V: Version, M: Method, B: BodyType> {
 
 pub struct Output<'a, S: State, V: Version, M: Method, B: BodyType> {
     token: ResumeToken<S, V, M, B>,
-    output: &'a [u8],
+    out: Out<'a>,
 }
 
 impl<'a> Request<'a, (), (), (), ()> {
@@ -82,6 +82,10 @@ impl<'a, S: State, V: Version, M: Method, B: BodyType> Request<'a, S, V, M, B> {
         Ok(self)
     }
 
+    pub fn capacity(&self) -> usize {
+        self.out.capacity()
+    }
+
     pub fn flush(self) -> Output<'a, S, V, M, B> {
         trace!("Flush");
         Output {
@@ -89,7 +93,7 @@ impl<'a, S: State, V: Version, M: Method, B: BodyType> Request<'a, S, V, M, B> {
                 typ: self.typ,
                 state: self.state,
             },
-            output: self.out.into_inner(),
+            out: self.out,
         }
     }
 
@@ -106,6 +110,13 @@ impl<'a, S: State, V: Version, M: Method, B: BodyType> Request<'a, S, V, M, B> {
             out: Out::wrap(buf),
         }
     }
+
+    #[cfg(feature = "std")]
+    pub fn write_to(mut self, write: &mut dyn std::io::Write) -> std::io::Result<Self> {
+        write.write_all(self.out.as_bytes())?;
+        self.out.reset_position();
+        Ok(self)
+    }
 }
 
 impl<'a, S: State, V: Version, M: Method, B: BodyType> Output<'a, S, V, M, B> {
@@ -113,8 +124,12 @@ impl<'a, S: State, V: Version, M: Method, B: BodyType> Output<'a, S, V, M, B> {
         self.token
     }
 
+    pub fn ready_and_buf(self) -> (ResumeToken<S, V, M, B>, &'a mut [u8]) {
+        (self.token, self.out.into_buf())
+    }
+
     pub fn as_bytes(&self) -> &[u8] {
-        &self.output
+        self.out.as_bytes()
     }
 }
 
@@ -122,7 +137,7 @@ impl<'a, S: State, V: Version, M: Method, B: BodyType> Deref for Output<'a, S, V
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
-        &self.output
+        self.as_bytes()
     }
 }
 
@@ -306,20 +321,6 @@ impl<'a, V: Version, M: MethodWithRequestBody> Request<'a, SEND_BODY, V, M, BODY
             .expect("SendByteCheck when SEND_BODY")
     }
 
-    pub fn write_bytes(&mut self, bytes: &[u8]) -> Result<()> {
-        trace!("Write bytes len: {}", bytes.len());
-
-        // This returns Err if we try to write more bytes than content-length.
-        self.checker()
-            .append(bytes.len(), HootError::SentMoreThanContentLength)?;
-
-        let mut w = self.out.writer();
-        w.write_bytes(bytes)?;
-        w.commit();
-
-        Ok(())
-    }
-
     pub fn finish(mut self) -> Result<Request<'a, ENDED, (), (), ()>> {
         trace!("Body finished");
 
@@ -331,8 +332,50 @@ impl<'a, V: Version, M: MethodWithRequestBody> Request<'a, SEND_BODY, V, M, BODY
     }
 }
 
+impl<'a, V: Version, M: MethodWithRequestBody> BodyWriter
+    for Request<'a, SEND_BODY, V, M, BODY_LENGTH>
+{
+    fn write_bytes(mut self, bytes: &[u8]) -> Result<Self> {
+        trace!("Write bytes len: {}", bytes.len());
+
+        // This returns Err if we try to write more bytes than content-length.
+        self.checker()
+            .append(bytes.len(), HootError::SentMoreThanContentLength)?;
+
+        let mut w = self.out.writer();
+        w.write_bytes(bytes)?;
+        w.commit();
+
+        Ok(self)
+    }
+}
+
 impl<'a, V: Version, M: MethodWithRequestBody> Request<'a, SEND_BODY, V, M, BODY_CHUNKED> {
-    pub fn write_chunk(mut self, bytes: &[u8]) -> Result<Self> {
+    pub fn with_trailer(mut self) -> Result<Request<'a, SEND_TRAILER, V, M, BODY_CHUNKED>> {
+        trace!("With trailer");
+
+        let mut w = self.out.writer();
+        write!(w, "0\r\n").or(OVERFLOW)?;
+        w.commit();
+
+        Ok(self.transition())
+    }
+
+    pub fn finish(mut self) -> Result<Request<'a, ENDED, (), (), ()>> {
+        trace!("Body chunks finished");
+
+        let mut w = self.out.writer();
+        write!(w, "0\r\n\r\n").or(OVERFLOW)?;
+        w.commit();
+
+        Ok(self.transition())
+    }
+}
+
+impl<'a, V: Version, M: MethodWithRequestBody> BodyWriter
+    for Request<'a, SEND_BODY, V, M, BODY_CHUNKED>
+{
+    fn write_bytes(mut self, bytes: &[u8]) -> Result<Self> {
         trace!("Write chunk len: {}", bytes.len());
 
         // Writing no bytes is ok. Ending the chunk writing is by doing the finish() call.
@@ -354,26 +397,6 @@ impl<'a, V: Version, M: MethodWithRequestBody> Request<'a, SEND_BODY, V, M, BODY
         w.commit();
 
         Ok(self)
-    }
-
-    pub fn with_trailer(mut self) -> Result<Request<'a, SEND_TRAILER, V, M, BODY_CHUNKED>> {
-        trace!("With trailer");
-
-        let mut w = self.out.writer();
-        write!(w, "0\r\n").or(OVERFLOW)?;
-        w.commit();
-
-        Ok(self.transition())
-    }
-
-    pub fn finish(mut self) -> Result<Request<'a, ENDED, (), (), ()>> {
-        trace!("Body chunks finished");
-
-        let mut w = self.out.writer();
-        write!(w, "0\r\n\r\n").or(OVERFLOW)?;
-        w.commit();
-
-        Ok(self.transition())
     }
 }
 

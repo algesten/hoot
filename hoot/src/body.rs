@@ -5,7 +5,7 @@ use core::str;
 use crate::chunk::Dechunker;
 use crate::error::Result;
 use crate::util::compare_lowercase_ascii;
-use crate::{CallState, Header, HootError, Method};
+use crate::{CallState, HootError, Method};
 
 pub(crate) fn do_read_body<'a, 'b>(
     state: &mut CallState,
@@ -138,14 +138,18 @@ pub enum RecvBodyMode {
 }
 
 impl RecvBodyMode {
-    pub fn for_request(http10: bool, method: Method, headers: &[Header<'_>]) -> Result<Self> {
+    pub fn for_request<'a>(
+        http10: bool,
+        method: Method,
+        header_lookup: &'a dyn Fn(&str) -> Option<&'a str>,
+    ) -> Result<Self> {
         let has_no_body = !method.has_request_body();
 
         if has_no_body {
             return Ok(Self::LengthDelimited(0));
         }
 
-        let ret = match Self::header_defined(http10, headers)? {
+        let ret = match Self::header_defined(http10, header_lookup)? {
             // Request bodies cannot be close delimited (even under http10).
             Self::CloseDelimited => Self::LengthDelimited(0),
             r @ _ => r,
@@ -154,11 +158,11 @@ impl RecvBodyMode {
         Ok(ret)
     }
 
-    pub fn for_response(
+    pub fn for_response<'a>(
         http10: bool,
         method: Method,
         status_code: u16,
-        headers: &[Header<'_>],
+        header_lookup: &'a dyn Fn(&str) -> Option<&'a str>,
     ) -> Result<Self> {
         let is_success = status_code >= 200 && status_code <= 299;
         let is_informational = status_code >= 100 && status_code <= 199;
@@ -187,28 +191,31 @@ impl RecvBodyMode {
 
         // https://datatracker.ietf.org/doc/html/rfc2616#section-4.3
         // All other responses do include a message-body, although it MAY be of zero length.
-        Self::header_defined(http10, headers)
+        Self::header_defined(http10, header_lookup)
     }
 
-    fn header_defined(http10: bool, headers: &[Header]) -> Result<Self> {
+    fn header_defined<'a>(
+        http10: bool,
+        header_lookup: &'a dyn Fn(&str) -> Option<&'a str>,
+    ) -> Result<Self> {
         let mut content_length: Option<u64> = None;
         let mut chunked = false;
 
-        for head in headers {
-            if compare_lowercase_ascii(head.name(), "content-length") {
-                let v = str::from_utf8(head.value_raw())?.parse::<u64>()?;
-                if content_length.is_some() {
-                    return Err(HootError::DuplicateContentLength);
-                }
-                content_length = Some(v);
-            } else if !chunked && compare_lowercase_ascii(head.name(), "transfer-encoding") {
-                // Header can repeat, stop looking if we found "chunked"
-                let s = str::from_utf8(head.value_raw())?;
-                chunked = s
-                    .split(",")
-                    .map(|v| v.trim())
-                    .any(|v| compare_lowercase_ascii(v, "chunked"));
+        // for head in headers {
+        if let Some(value) = header_lookup("content-length") {
+            let v = value.parse::<u64>()?;
+            if content_length.is_some() {
+                return Err(HootError::DuplicateContentLength);
             }
+            content_length = Some(v);
+        }
+
+        if let Some(value) = header_lookup("transfer-encoding") {
+            // Header can repeat, stop looking if we found "chunked"
+            chunked = value
+                .split(",")
+                .map(|v| v.trim())
+                .any(|v| compare_lowercase_ascii(v, "chunked"));
         }
 
         if chunked && !http10 {

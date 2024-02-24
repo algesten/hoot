@@ -4,6 +4,7 @@
 
 use hoot::types;
 use hoot::types::state::{SEND_HEADERS, SEND_STATUS};
+use hoot::BodyWriter;
 use hoot::{server::*, Header, Method};
 use hooturl::Url;
 use std::collections::HashMap;
@@ -279,8 +280,7 @@ fn send_response<M: types::MethodWithResponseBody>(
 
     // Chunk body into the max sizes possible.
     for chunk in body_bytes.chunks(chunk_len) {
-        resp.write_bytes(chunk)?;
-        let output = resp.flush();
+        let output = resp.write_bytes(chunk)?.flush();
 
         o.write_all(&output)?;
 

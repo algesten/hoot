@@ -6,7 +6,7 @@ use crate::body::{do_read_body, RecvBodyMode};
 use crate::header::transmute_headers;
 use crate::types::state::*;
 use crate::types::*;
-use crate::util::{cast_buf_for_headers, LengthChecker};
+use crate::util::{cast_buf_for_headers, compare_lowercase_ascii, LengthChecker};
 use crate::BodyPart;
 use crate::{CallState, Result};
 use crate::{Header, HootError, HttpVersion};
@@ -80,7 +80,17 @@ impl<S: State> Response<S> {
         let http10 = ver == HttpVersion::Http10;
         let method = self.state.method.unwrap(); // Ok for same reason as above.
         let headers = transmute_headers(r.headers);
-        let mode = RecvBodyMode::for_response(http10, method, status.1, headers)?;
+
+        let lookup = |name: &str| {
+            for header in &*headers {
+                if compare_lowercase_ascii(header.name(), name) {
+                    return Some(header.value());
+                }
+            }
+            None
+        };
+
+        let mode = RecvBodyMode::for_response(http10, method, status.1, &lookup)?;
         self.state.recv_body_mode = Some(mode);
 
         // If we are awaiting a length, put a length checker in place
@@ -235,5 +245,56 @@ mod test {
 
         assert!(a.headers().unwrap().is_empty());
         Ok(())
+    }
+}
+
+/// Type encapsulating a Response status text.
+///
+/// The http crate eschews the status text since it's out of fashion. We want to support it,
+/// and this newtype is used to store it as an http crate `Extension`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg(feature = "http_crate")]
+pub struct StatusText(pub String);
+
+#[cfg(feature = "http_crate")]
+impl std::ops::Deref for StatusText {
+    type Target = String;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[cfg(feature = "http_crate")]
+impl<'a, 'b> TryFrom<ResponseAttempt<'a, 'b>> for http::Response<()> {
+    type Error = HootError;
+
+    fn try_from(attempt: ResponseAttempt<'a, 'b>) -> Result<Self> {
+        if !attempt.is_success() {
+            return Err(HootError::IncompleteResponseAttempt);
+        }
+
+        // unwraps ok due to is_success() check above.
+        let status = attempt.status().unwrap();
+        let headers = attempt.headers().unwrap();
+
+        let http_status = http::StatusCode::from_u16(status.code())
+            .map_err(|_| HootError::HttpRefusedStatusCode)?;
+
+        let mut builder = http::Response::builder()
+            .version(status.version().into())
+            .status(http_status)
+            // http crate eschews the status text since it's out of fashion.
+            .extension(StatusText(status.text().to_owned()));
+
+        for header in headers {
+            builder = builder.header(header.name(), header.value());
+        }
+
+        let res = builder
+            .body(())
+            .expect("Successful http::Response conversion");
+
+        Ok(res)
     }
 }

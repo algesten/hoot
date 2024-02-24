@@ -41,8 +41,11 @@ mod header;
 pub use header::Header;
 
 mod body;
-pub use body::BodyPart;
-use body::RecvBodyMode;
+pub use body::{BodyPart, RecvBodyMode};
+
+pub trait BodyWriter: Sized {
+    fn write_bytes(self, bytes: &[u8]) -> Result<Self>;
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum HttpVersion {
@@ -133,6 +136,62 @@ impl fmt::Debug for Method {
             Self::TRACE => write!(f, "TRACE"),
             Self::CONNECT => write!(f, "CONNECT"),
             Self::PATCH => write!(f, "PATCH"),
+        }
+    }
+}
+
+#[cfg(feature = "http_crate")]
+impl From<HttpVersion> for http::Version {
+    fn from(value: HttpVersion) -> Self {
+        match value {
+            HttpVersion::Http10 => http::Version::HTTP_10,
+            HttpVersion::Http11 => http::Version::HTTP_11,
+        }
+    }
+}
+
+#[cfg(feature = "http_crate")]
+impl From<http::Version> for HttpVersion {
+    fn from(value: http::Version) -> Self {
+        match value {
+            http::Version::HTTP_10 => HttpVersion::Http10,
+            http::Version::HTTP_11 => HttpVersion::Http11,
+            _ => panic!("Unhandled HTTP version: {:?}", value),
+        }
+    }
+}
+
+#[cfg(feature = "http_crate")]
+impl From<Method> for http::Method {
+    fn from(value: Method) -> Self {
+        match value {
+            Method::OPTIONS => http::Method::OPTIONS,
+            Method::GET => http::Method::GET,
+            Method::POST => http::Method::POST,
+            Method::PUT => http::Method::PUT,
+            Method::DELETE => http::Method::DELETE,
+            Method::HEAD => http::Method::HEAD,
+            Method::TRACE => http::Method::TRACE,
+            Method::CONNECT => http::Method::CONNECT,
+            Method::PATCH => http::Method::PATCH,
+        }
+    }
+}
+
+#[cfg(feature = "http_crate")]
+impl From<http::Method> for Method {
+    fn from(value: http::Method) -> Self {
+        match value {
+            http::Method::OPTIONS => Method::OPTIONS,
+            http::Method::GET => Method::GET,
+            http::Method::POST => Method::POST,
+            http::Method::PUT => Method::PUT,
+            http::Method::DELETE => Method::DELETE,
+            http::Method::HEAD => Method::HEAD,
+            http::Method::TRACE => Method::TRACE,
+            http::Method::CONNECT => Method::CONNECT,
+            http::Method::PATCH => Method::PATCH,
+            _ => panic!("Unhandled HTTP method: {:?}", value),
         }
     }
 }

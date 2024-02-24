@@ -12,6 +12,11 @@ impl<'a> Out<'a> {
         Out { buf, pos: 0 }
     }
 
+    #[cfg(feature = "std")]
+    pub fn reset_position(&mut self) {
+        self.pos = 0;
+    }
+
     fn output<'b>(&mut self, bytes: &'b [u8], from: usize) -> Result<usize> {
         let start = self.pos + from;
         let remaining = self.buf.len() - start;
@@ -34,8 +39,16 @@ impl<'a> Out<'a> {
         }
     }
 
-    pub fn into_inner(self) -> &'a [u8] {
+    pub fn as_bytes(&self) -> &[u8] {
         &self.buf[..self.pos]
+    }
+
+    pub fn into_buf(self) -> &'a mut [u8] {
+        self.buf
+    }
+
+    pub(crate) fn capacity(&self) -> usize {
+        self.buf.len() - self.pos
     }
 }
 

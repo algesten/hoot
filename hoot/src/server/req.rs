@@ -5,7 +5,7 @@ use crate::error::Result;
 use crate::header::transmute_headers;
 use crate::types::state::*;
 use crate::types::*;
-use crate::util::{cast_buf_for_headers, LengthChecker};
+use crate::util::{cast_buf_for_headers, compare_lowercase_ascii, LengthChecker};
 use crate::{BodyPart, CallState};
 use crate::{Header, HootError, HttpVersion, Method};
 
@@ -79,7 +79,16 @@ impl<S: State> Request<S> {
         let headers = transmute_headers(r.headers);
         trace!("Headers: {:?}", headers);
 
-        let mode = RecvBodyMode::for_request(http10, method, headers)?;
+        let lookup = |name: &str| {
+            for header in &*headers {
+                if compare_lowercase_ascii(header.name(), name) {
+                    return Some(header.value());
+                }
+            }
+            None
+        };
+
+        let mode = RecvBodyMode::for_request(http10, method, &lookup)?;
         self.state.recv_body_mode = Some(mode);
         trace!("Body mode: {:?}", mode);
 
@@ -203,7 +212,36 @@ impl Request<RECV_BODY> {
             return Err(HootError::BodyNotFinished);
         }
 
-        // Unwrap is OK, because the request method was read earlier.
         Ok(self.state.into())
+    }
+}
+
+#[cfg(feature = "http_crate")]
+impl<'a, 'b> TryFrom<RequestAttempt<'a, 'b>> for http::Request<()> {
+    type Error = HootError;
+
+    fn try_from(attempt: RequestAttempt<'a, 'b>) -> Result<Self> {
+        if !attempt.is_success() {
+            return Err(HootError::IncompleteRequestAttempt);
+        }
+
+        // unwraps ok due to is_success() check above.
+        let line = attempt.line().unwrap();
+        let headers = attempt.headers().unwrap();
+
+        let mut builder = http::Request::builder()
+            .version(line.version().into())
+            .method(line.method())
+            .uri(line.path());
+
+        for header in headers {
+            builder = builder.header(header.name(), header.value());
+        }
+
+        let req = builder
+            .body(())
+            .expect("Successful http::Request conversion");
+
+        Ok(req)
     }
 }

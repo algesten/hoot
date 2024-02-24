@@ -140,3 +140,6 @@ pub use req::{Output, Request, ResumeToken};
 
 mod res;
 pub use res::{Response, Status};
+
+#[cfg(feature = "http_crate")]
+pub use res::StatusText;
