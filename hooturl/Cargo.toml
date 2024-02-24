@@ -1,0 +1,21 @@
+[package]
+name = "hooturl"
+version = "0.1.4"
+edition = "2021"
+authors = ["Martin Algesten <martin@algesten.se>"]
+description = "no_std, allocation free url library"
+keywords = ["http", "server", "web"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/algesten/hoot"
+
+# MSRV
+rust-version = "1.61"
+
+[package.metadata.docs.rs]
+features = ["all"]
+rustdoc-args = ["--cfg", "docsrs"]
+
+[features]
+default = []
+all = ["std"]
+std = []

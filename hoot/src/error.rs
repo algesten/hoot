@@ -2,8 +2,6 @@ use core::fmt;
 use core::num::ParseIntError;
 use core::str::Utf8Error;
 
-use crate::url::UrlError;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum HootError {
@@ -82,9 +80,6 @@ pub enum HootError {
     /// Request method is unknown.
     UnknownMethod,
 
-    /// Url parsing error
-    UrlError(UrlError),
-
     /// Failed to get a `TryInto<u64>`.
     NotU64,
 }
@@ -146,10 +141,6 @@ impl fmt::Display for HootError {
             IncorrectChunk => "incorrect incoming body chunk",
             BodyNotFinished => "called finish() before body was finished",
             UnknownMethod => "unknown incoming method",
-            UrlError(v) => {
-                write!(f, "url: {}", v)?;
-                return Ok(());
-            }
             NotU64 => "not possible to convert to u64",
         };
 

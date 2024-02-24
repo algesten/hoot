@@ -1,7 +1,8 @@
 use std::io;
 use std::str::Utf8Error;
 
-use hoot::{HootError, UrlError};
+use hoot::HootError;
+use hooturl::UrlError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]

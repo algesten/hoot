@@ -44,9 +44,6 @@ mod body;
 pub use body::BodyPart;
 use body::RecvBodyMode;
 
-mod url;
-pub use url::{Url, UrlError};
-
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum HttpVersion {
     Http10,
