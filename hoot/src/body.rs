@@ -20,21 +20,17 @@ pub(crate) fn do_read_body<'a, 'b>(
     }
 
     // unwrap is ok because we can't be in state RECV_BODY without setting it.
-    let bit = match state.recv_body_mode.unwrap() {
+    let part = match state.recv_body_mode.unwrap() {
         RecvBodyMode::LengthDelimited(_) => read_limit(state, src, dst, true),
         RecvBodyMode::Chunked => read_chunked(state, src, dst),
         RecvBodyMode::CloseDelimited => read_limit(state, src, dst, false),
     }?;
 
-    if bit.finished {
+    if part.finished {
         state.did_read_to_end = true;
     }
 
-    Ok(BodyPart {
-        input_used: bit.input_used,
-        data: bit.data,
-        finished: bit.finished,
-    })
+    Ok(part)
 }
 
 fn read_limit<'a, 'b>(
@@ -43,21 +39,29 @@ fn read_limit<'a, 'b>(
     dst: &'b mut [u8],
     use_checker: bool,
 ) -> Result<BodyPart<'b>> {
-    let input_used = src.len().min(dst.len());
+    let mut input_used = src.len().min(dst.len());
 
     let mut finished = false;
     if use_checker {
+        // unwrap is ok, because use_checker can't be true if we haven't got
+        // a length checker set for the response.
         let checker = state.recv_checker.as_mut().unwrap();
+
+        // the input we need to read to fulfil the length checker might be
+        // smaller than the input buffers
+        input_used = checker.left_to_read().min(input_used);
+
         checker.append(input_used, HootError::RecvMoreThanContentLength)?;
         finished = checker.complete();
+
         trace!("Read body limited: {}", input_used);
     } else {
         trace!("Read body closed: {}", input_used);
     }
 
     let data = &mut dst[..input_used];
-
     data.copy_from_slice(&src[..input_used]);
+
     Ok(BodyPart {
         input_used,
         data,

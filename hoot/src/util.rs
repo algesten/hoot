@@ -69,6 +69,15 @@ impl LengthChecker {
         }
     }
 
+    pub fn left_to_read(&self) -> usize {
+        let left = self.expected - self.handled;
+        if left > usize::MAX as u64 {
+            usize::MAX
+        } else {
+            left as usize
+        }
+    }
+
     pub fn append(&mut self, amount: usize, err: HootError) -> Result<()> {
         let new_total = self.handled + amount as u64;
         if new_total > self.expected {
