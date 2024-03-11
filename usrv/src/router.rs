@@ -197,6 +197,9 @@ mod test {
 
         fn root() {}
         fn req(_r: Request) {}
+        fn req_x(_s: &mut AppState, _r: Request) -> &str {
+            "hello world"
+        }
         fn foo(_s: &mut AppState) {}
         fn bar(_s: &mut AppState, _r: Request) {}
 
@@ -204,6 +207,7 @@ mod test {
             //
             .get("/", root)
             .get("/req", req)
+            .get("/req_x", req_x)
             .get("/foo", foo)
             .get("/bar", bar)
             .get("free", |_r: Request| {})

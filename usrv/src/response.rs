@@ -22,9 +22,3 @@ impl IntoResponse for Infallible {
         panic!("IntoResponse for Infallible");
     }
 }
-
-impl IntoResponse for () {
-    fn into_response(self) -> Response {
-        http::Response::builder().body(Body::Empty).unwrap()
-    }
-}
