@@ -4,8 +4,22 @@ use crate::response::IntoResponse;
 
 pub enum Body {
     Empty,
-    Fixed(Vec<u8>),
+    Bytes(Vec<u8>),
     Streaming(Box<dyn Read + Send + 'static>),
+}
+
+impl Body {
+    pub fn empty() -> Body {
+        Body::Empty
+    }
+
+    pub fn bytes(bytes: impl Into<Vec<u8>>) -> Body {
+        Body::Bytes(bytes.into())
+    }
+
+    pub fn streaming(read: impl Read + Send + 'static) -> Body {
+        Body::Streaming(Box::new(read))
+    }
 }
 
 impl From<()> for Body {
@@ -16,25 +30,25 @@ impl From<()> for Body {
 
 impl From<Vec<u8>> for Body {
     fn from(value: Vec<u8>) -> Self {
-        Self::Fixed(value)
+        Self::Bytes(value)
     }
 }
 
 impl From<&[u8]> for Body {
     fn from(value: &[u8]) -> Self {
-        Self::Fixed(value.to_vec())
+        Self::Bytes(value.to_vec())
     }
 }
 
 impl From<String> for Body {
     fn from(value: String) -> Self {
-        Self::Fixed(value.into_bytes())
+        Self::Bytes(value.into_bytes())
     }
 }
 
 impl From<&str> for Body {
     fn from(value: &str) -> Self {
-        Self::Fixed(value.as_bytes().to_vec())
+        Self::Bytes(value.as_bytes().to_vec())
     }
 }
 
