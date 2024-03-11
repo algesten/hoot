@@ -1,4 +1,5 @@
-use core::marker::PhantomData;
+use std::convert::Infallible;
+use std::marker::PhantomData;
 
 pub struct Router<S = ()> {
     _state: PhantomData<S>,
@@ -126,10 +127,6 @@ impl Request {
     fn matches_path(&self, path: &str) -> bool {
         todo!()
     }
-
-    fn cheap_clone(&self) -> Self {
-        todo!()
-    }
 }
 
 pub struct Response;
@@ -141,10 +138,18 @@ impl Response {
 }
 
 impl From<()> for Response {
-    fn from(value: ()) -> Self {
+    fn from(_: ()) -> Self {
         todo!()
     }
 }
+
+impl From<Infallible> for Response {
+    fn from(_value: Infallible) -> Self {
+        panic!("Attempt to convert Infallible to Response")
+    }
+}
+
+pub struct State<S>(pub S);
 
 pub trait Handler<T, S>: Clone + Send + Sized + 'static {
     fn call(self, state: S, request: Request) -> Response;
@@ -160,50 +165,75 @@ where
     }
 }
 
-impl<S, F, Ret> Handler<((),), S> for F
+impl<S, F, T1, Ret> Handler<((), T1), S> for F
 where
-    F: FnOnce(Request) -> Ret + Clone + Send + 'static,
-    Ret: Into<Response>,
-{
-    fn call(self, _state: S, request: Request) -> Response {
-        (self)(request).into()
-    }
-}
-
-impl<S, F, Ret> Handler<((), ()), S> for F
-where
-    F: FnOnce(S) -> Ret + Clone + Send + 'static,
-    Ret: Into<Response>,
-{
-    fn call(self, state: S, _request: Request) -> Response {
-        (self)(state).into()
-    }
-}
-
-impl<S, F, A1: FromRequest<S>, Ret> Handler<((), (), A1), S> for F
-where
-    F: FnOnce(S, A1) -> Ret + Clone + Send + 'static,
+    F: FnOnce(T1) -> Ret + Clone + Send + 'static,
+    T1: FromRequest<S>,
     Ret: Into<Response>,
 {
     fn call(self, state: S, request: Request) -> Response {
-        let a1 = match A1::from_request(&state, &request) {
+        let t1 = match T1::from_request(state, request) {
             Ok(v) => v,
             Err(e) => return e.into(),
         };
-        (self)(state, a1).into()
+        (self)(t1).into()
+    }
+}
+
+impl<S, F, T1, T2, Ret> Handler<((), T1, T2), S> for F
+where
+    F: FnOnce(T1, T2) -> Ret + Clone + Send + 'static,
+    T1: FromRequestRefs<S>,
+    T2: FromRequest<S>,
+    Ret: Into<Response>,
+{
+    fn call(self, state: S, request: Request) -> Response {
+        let t1 = match T1::from_request(&state, &request) {
+            Ok(v) => v,
+            Err(e) => return e.into(),
+        };
+        let t2 = match T2::from_request(state, request) {
+            Ok(v) => v,
+            Err(e) => return e.into(),
+        };
+        (self)(t1, t2).into()
     }
 }
 
 pub trait FromRequest<S>: Sized {
     type Rejection: Into<Response>;
-    fn from_request<'a, 's>(state: &'s S, req: &'a Request) -> Result<Self, Self::Rejection>;
+    fn from_request(state: S, request: Request) -> Result<Self, Self::Rejection>;
 }
 
 impl<S> FromRequest<S> for Request {
-    type Rejection = ();
+    type Rejection = Infallible;
 
-    fn from_request<'a, 's>(state: &'s S, req: &'a Request) -> Result<Self, Self::Rejection> {
-        Ok(req.cheap_clone())
+    fn from_request(_state: S, request: Request) -> Result<Self, Self::Rejection> {
+        Ok(request)
+    }
+}
+
+impl<S> FromRequest<S> for State<S> {
+    type Rejection = Infallible;
+
+    fn from_request(state: S, _request: Request) -> Result<Self, Self::Rejection> {
+        Ok(State(state))
+    }
+}
+
+pub trait FromRequestRefs<S>: Sized {
+    type Rejection: Into<Response>;
+    fn from_request<'a, 's>(state: &'s S, request: &'a Request) -> Result<Self, Self::Rejection>;
+}
+
+impl<S> FromRequestRefs<S> for State<S>
+where
+    S: Clone,
+{
+    type Rejection = Infallible;
+
+    fn from_request<'a, 's>(state: &'s S, _request: &'a Request) -> Result<Self, Self::Rejection> {
+        Ok(State(state.clone()))
     }
 }
 
@@ -211,28 +241,30 @@ impl<S> FromRequest<S> for Request {
 mod test {
     use super::*;
 
-    struct State;
-
-    fn root() {}
-
-    fn req(_r: Request) {}
-
-    fn foo(_s: &mut State) {}
-
-    fn bar(_s: &mut State, _r: Request) {}
-
     #[test]
     fn make_route() {
-        let app = Router::with_state::<&mut State>()
+        #[derive(Clone)]
+        struct AppState;
+
+        fn root() {}
+
+        fn req(_r: Request) {}
+
+        fn foo(State(_s): State<&mut AppState>) {}
+
+        fn bar(State(_s): State<&mut AppState>, _r: Request) {}
+
+        let app = Router::with_state::<&mut AppState>()
             //
             .get("/", root)
             .get("/req", req)
             .get("/foo", foo)
             .get("/bar", bar)
-            .get("free", |_r: Request| {})
+            // .get("free", |_r: Request| {})
+            // .get("/bar2", bar2)
             .finish();
 
-        let mut state = State;
+        let mut state = AppState;
 
         let request = Request;
 
