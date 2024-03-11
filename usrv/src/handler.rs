@@ -1,5 +1,5 @@
 use crate::from_req::{FromRequest, FromRequestRef};
-use crate::{Request, Response};
+use crate::{IntoResponse, Request, Response};
 
 pub trait Handler<T, S>: Clone + Send + Sized + 'static {
     fn call(self, state: S, request: Request) -> Response;
@@ -8,20 +8,20 @@ pub trait Handler<T, S>: Clone + Send + Sized + 'static {
 impl<S, F, Ret> Handler<(), S> for F
 where
     F: FnOnce() -> Ret + Clone + Send + 'static,
-    Ret: Into<Response>,
+    Ret: IntoResponse,
 {
     fn call(self, _state: S, _request: Request) -> Response {
-        (self)().into()
+        (self)().into_response()
     }
 }
 
 impl<S, F, Ret> Handler<((),), S> for F
 where
     F: FnOnce(S) -> Ret + Clone + Send + 'static,
-    Ret: Into<Response>,
+    Ret: IntoResponse,
 {
     fn call(self, state: S, _request: Request) -> Response {
-        (self)(state).into()
+        (self)(state).into_response()
     }
 }
 
@@ -29,14 +29,14 @@ impl<S, F, T1, Ret> Handler<((), T1), S> for F
 where
     F: FnOnce(T1) -> Ret + Clone + Send + 'static,
     T1: FromRequest<S>,
-    Ret: Into<Response>,
+    Ret: IntoResponse,
 {
     fn call(self, state: S, request: Request) -> Response {
         let t1 = match T1::from_request(&state, request) {
             Ok(v) => v,
-            Err(e) => return e.into(),
+            Err(e) => return e.into_response(),
         };
-        (self)(t1).into()
+        (self)(t1).into_response()
     }
 }
 
@@ -44,14 +44,14 @@ impl<S, F, T1, Ret> Handler<(((),), T1), S> for F
 where
     F: FnOnce(S, T1) -> Ret + Clone + Send + 'static,
     T1: FromRequest<S>,
-    Ret: Into<Response>,
+    Ret: IntoResponse,
 {
     fn call(self, state: S, request: Request) -> Response {
         let t1 = match T1::from_request(&state, request) {
             Ok(v) => v,
-            Err(e) => return e.into(),
+            Err(e) => return e.into_response(),
         };
-        (self)(state, t1).into()
+        (self)(state, t1).into_response()
     }
 }
 
@@ -63,7 +63,7 @@ macro_rules! impl_handler {
         impl<S, F, $($ty,)* $last, Ret> Handler<((), $($ty,)* $last), S> for F
         where
             F: FnOnce($($ty,)* $last) -> Ret + Clone + Send + 'static,
-            Ret: Into<Response>,
+            Ret: IntoResponse,
             $( $ty: FromRequestRef<S> + Send, )*
             $last: FromRequest<S> + Send,
         {
@@ -78,17 +78,17 @@ macro_rules! impl_handler {
 
                 let $last = match $last::from_request(&state, request) {
                     Ok(v) => v,
-                    Err(e) => return e.into(),
+                    Err(e) => return e.into_response(),
                 };
 
-                (self)($($ty,)* $last).into()
+                (self)($($ty,)* $last).into_response()
             }
         }
         #[allow(non_snake_case)]
         impl<S, F, $($ty,)* $last, Ret> Handler<(((),), $($ty,)* $last), S> for F
         where
             F: FnOnce(S, $($ty,)* $last) -> Ret + Clone + Send + 'static,
-            Ret: Into<Response>,
+            Ret: IntoResponse,
             $( $ty: FromRequestRef<S> + Send, )*
             $last: FromRequest<S> + Send,
         {
@@ -103,10 +103,10 @@ macro_rules! impl_handler {
 
                 let $last = match $last::from_request(&state, request) {
                     Ok(v) => v,
-                    Err(e) => return e.into(),
+                    Err(e) => return e.into_response(),
                 };
 
-                (self)(state, $($ty,)* $last).into()
+                (self)(state, $($ty,)* $last).into_response()
             }
         }
     }

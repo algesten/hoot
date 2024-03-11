@@ -22,4 +22,4 @@ std = []
 
 [dependencies]
 hoot = { path = "../hoot", version = "0.1.4", features = ["std"] }
-thiserror = "1.0.56"
+http = "1.1.0"

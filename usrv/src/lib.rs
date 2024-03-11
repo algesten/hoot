@@ -1,8 +1,8 @@
 use std::convert::Infallible;
 
-mod router;
+pub use http;
 
-pub use router::{Router, Service};
+pub mod router;
 
 mod handler;
 pub use handler::Handler;
@@ -10,29 +10,33 @@ pub use handler::Handler;
 mod from_req;
 pub use from_req::{FromRequest, FromRequestRef};
 
-pub struct Request;
-impl Request {
-    fn matches_path(&self, _path: &str) -> bool {
-        todo!()
-    }
+mod response;
+
+pub type Request = http::Request<Body>;
+pub type Response = http::Response<Body>;
+
+pub trait IntoResponse {
+    fn into_response(self) -> Response;
 }
 
-pub struct Response;
-
-impl Response {
-    pub fn not_found() -> Self {
-        todo!()
-    }
+pub enum Body {
+    Empty,
 }
 
-impl From<()> for Response {
+impl From<()> for Body {
     fn from(_: ()) -> Self {
-        todo!()
+        Body::Empty
     }
 }
 
-impl From<Infallible> for Response {
-    fn from(_value: Infallible) -> Self {
-        panic!("Attempt to convert Infallible to Response")
+impl IntoResponse for Infallible {
+    fn into_response(self) -> Response {
+        panic!("IntoResponse for Infallible");
+    }
+}
+
+impl IntoResponse for () {
+    fn into_response(self) -> Response {
+        http::Response::builder().body(Body::Empty).unwrap()
     }
 }

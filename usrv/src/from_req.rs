@@ -1,9 +1,9 @@
 use std::convert::Infallible;
 
-use crate::{Request, Response};
+use crate::{IntoResponse, Request, Response};
 
 pub trait FromRequest<S>: Sized {
-    type Rejection: Into<Response>;
+    type Rejection: IntoResponse;
     fn from_request(state: &S, request: Request) -> Result<Self, Self::Rejection>;
 }
 
