@@ -3,8 +3,12 @@ pub use http;
 pub mod body;
 use body::Body;
 
-pub mod from_req;
-pub mod handler;
+mod handler;
+pub use handler::Handler;
+
+mod from_req;
+pub use from_req::{FromRequest, FromRequestRef};
+
 pub mod response;
 pub mod router;
 

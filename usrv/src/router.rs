@@ -30,6 +30,13 @@ impl<S> Callable<S> for Router<S> {
 
 #[allow(private_bounds)]
 pub trait MethodRouter<S>: Sized + Callable<S> {
+    fn finish(self) -> Service<S, Self> {
+        Service {
+            _state: PhantomData,
+            parent: self,
+        }
+    }
+
     #[doc(hidden)]
     fn handle<T, H: Handler<T, S>>(
         self,
@@ -73,16 +80,9 @@ pub trait MethodRouter<S>: Sized + Callable<S> {
     fn trace<T, H: Handler<T, S>>(self, path: &str, handler: H) -> MethodHandler<T, S, H, Self> {
         Self::handle(self, Method::TRACE, path, handler)
     }
-
-    fn finish(self) -> Service<S, Self> {
-        Service {
-            _state: PhantomData,
-            parent: self,
-        }
-    }
 }
 
-trait Callable<S> {
+trait Callable<S>: Clone {
     fn call(&self, state: S, request: Request) -> CallResult<S>;
 }
 
@@ -162,7 +162,7 @@ impl<'a, T, S, H: Handler<T, S>, P: Callable<S>> Callable<S> for MethodHandler<'
     }
 }
 
-fn request_matcher(request: &Request, method: &Method, path: &str) -> bool {
+fn request_matcher(_request: &Request, _method: &Method, _path: &str) -> bool {
     todo!()
 }
 
@@ -186,6 +186,36 @@ impl<'a, T1, S, H1: Handler<T1, S>, P1: Callable<S>> MethodRouter<S>
     }
 }
 
+impl<S> Clone for Router<S> {
+    fn clone(&self) -> Self {
+        Self {
+            _state: PhantomData,
+        }
+    }
+}
+
+impl<S, P: Clone> Clone for Service<S, P> {
+    fn clone(&self) -> Self {
+        Self {
+            _state: PhantomData,
+            parent: self.parent.clone(),
+        }
+    }
+}
+
+impl<'a, T, S, H: Clone, P: Clone> Clone for MethodHandler<'a, T, S, H, P> {
+    fn clone(&self) -> Self {
+        Self {
+            _htype: PhantomData,
+            _state: PhantomData,
+            parent: self.parent.clone(),
+            method: self.method.clone(),
+            path: self.path,
+            handler: self.handler.clone(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -203,7 +233,7 @@ mod test {
         fn foo(_s: &mut AppState) {}
         fn bar(_s: &mut AppState, _r: Request) {}
 
-        let app = Router::with_state::<&mut AppState>()
+        let service = Router::with_state::<&mut AppState>()
             //
             .get("/", root)
             .get("/req", req)
@@ -218,6 +248,8 @@ mod test {
 
         let request = http::Request::get("/").body(().into()).unwrap();
 
-        let _response = app.call(&mut state, request);
+        let cloned = service.clone();
+
+        let _response = cloned.call(&mut state, request);
     }
 }
