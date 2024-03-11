@@ -3,8 +3,8 @@ use std::marker::PhantomData;
 use http::Method;
 
 use crate::handler::Handler;
-use crate::response::NotFound;
-use crate::{IntoResponse, Request, Response};
+use crate::response::{IntoResponse, NotFound};
+use crate::{Request, Response};
 
 pub struct Router<S = ()> {
     _state: PhantomData<S>,

@@ -1,5 +1,6 @@
 use crate::from_req::{FromRequest, FromRequestRef};
-use crate::{IntoResponse, Request, Response};
+use crate::response::IntoResponse;
+use crate::{Request, Response};
 
 pub trait Handler<T, S>: Clone + Send + Sized + 'static {
     fn call(self, state: S, request: Request) -> Response;

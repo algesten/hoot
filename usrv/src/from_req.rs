@@ -1,6 +1,7 @@
 use std::convert::Infallible;
 
-use crate::{IntoResponse, Request, Response};
+use crate::response::IntoResponse;
+use crate::{Request, Response};
 
 pub trait FromRequest<S>: Sized {
     type Rejection: IntoResponse;
