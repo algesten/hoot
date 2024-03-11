@@ -18,5 +18,5 @@ impl<S> FromRequest<S> for Request {
 
 pub trait FromRequestRef<S>: Sized {
     type Rejection: Into<Response>;
-    fn from_request<'a, 's>(state: &'s S, request: &'a Request) -> Result<Self, Self::Rejection>;
+    fn from_request(state: &S, request: &Request) -> Result<Self, Self::Rejection>;
 }
