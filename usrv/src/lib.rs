@@ -1,15 +1,18 @@
-mod router;
 use std::convert::Infallible;
+
+mod router;
 
 pub use router::{Router, Service};
 
 mod handler;
+pub use handler::Handler;
 
 mod from_req;
+pub use from_req::{FromRequest, FromRequestRef};
 
 pub struct Request;
 impl Request {
-    fn matches_path(&self, path: &str) -> bool {
+    fn matches_path(&self, _path: &str) -> bool {
         todo!()
     }
 }
