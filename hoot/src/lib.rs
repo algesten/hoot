@@ -136,3 +136,30 @@ impl fmt::Debug for Method {
         }
     }
 }
+
+#[cfg(feature = "http_crate")]
+impl From<HttpVersion> for http::Version {
+    fn from(value: HttpVersion) -> Self {
+        match value {
+            HttpVersion::Http10 => http::Version::HTTP_10,
+            HttpVersion::Http11 => http::Version::HTTP_11,
+        }
+    }
+}
+
+#[cfg(feature = "http_crate")]
+impl From<Method> for http::Method {
+    fn from(value: Method) -> Self {
+        match value {
+            Method::OPTIONS => http::Method::OPTIONS,
+            Method::GET => http::Method::GET,
+            Method::POST => http::Method::POST,
+            Method::PUT => http::Method::PUT,
+            Method::DELETE => http::Method::DELETE,
+            Method::HEAD => http::Method::HEAD,
+            Method::TRACE => http::Method::TRACE,
+            Method::CONNECT => http::Method::CONNECT,
+            Method::PATCH => http::Method::PATCH,
+        }
+    }
+}

@@ -82,6 +82,10 @@ pub enum HootError {
 
     /// Failed to get a `TryInto<u64>`.
     NotU64,
+
+    /// A TryFrom conversion of a [`server::RequestAttempt`] that was not complete.
+    #[cfg(feature = "http_crate")]
+    IncompleteRequestAttempt,
 }
 
 pub(crate) static OVERFLOW: Result<()> = Err(HootError::OutputOverflow);
@@ -142,6 +146,8 @@ impl fmt::Display for HootError {
             BodyNotFinished => "called finish() before body was finished",
             UnknownMethod => "unknown incoming method",
             NotU64 => "not possible to convert to u64",
+            #[cfg(feature = "http_crate")]
+            IncompleteRequestAttempt => "not a complete request",
         };
 
         write!(f, "{}", s)

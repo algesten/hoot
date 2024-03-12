@@ -207,3 +207,33 @@ impl Request<RECV_BODY> {
         Ok(self.state.into())
     }
 }
+
+#[cfg(feature = "http_crate")]
+impl<'a, 'b> TryFrom<RequestAttempt<'a, 'b>> for http::Request<()> {
+    type Error = HootError;
+
+    fn try_from(attempt: RequestAttempt<'a, 'b>) -> Result<Self> {
+        if !attempt.is_success() {
+            return Err(HootError::IncompleteRequestAttempt);
+        }
+
+        // unwraps ok due to is_success() check above.
+        let line = attempt.line().unwrap();
+        let headers = attempt.headers().unwrap();
+
+        let mut builder = http::Request::builder()
+            .version(line.version().into())
+            .method(line.method())
+            .uri(line.path());
+
+        for header in headers {
+            builder = builder.header(header.name(), header.value());
+        }
+
+        let req = builder
+            .body(())
+            .expect("Successful http::Request conversion");
+
+        Ok(req)
+    }
+}

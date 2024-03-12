@@ -1,5 +1,8 @@
-use std::io::Read;
+use std::io::{self, Read};
 
+use hoot::types::state::RECV_BODY;
+
+use crate::fill_more::FillMoreBuffer;
 use crate::response::IntoResponse;
 
 pub enum Body {
@@ -58,5 +61,53 @@ where
 {
     fn into_response(self) -> crate::Response {
         http::Response::new(self.into())
+    }
+}
+
+pub(crate) struct HootBody<Read> {
+    pub request: hoot::server::Request<RECV_BODY>,
+    pub parse_buf: Vec<u8>,
+    pub buffer: FillMoreBuffer<Read>,
+    pub leftover: Vec<u8>,
+}
+
+impl<Read: io::Read> io::Read for HootBody<Read> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if !self.leftover.is_empty() {
+            let max = self.leftover.len().min(buf.len());
+            buf[..max].copy_from_slice(&self.leftover[..max]);
+            self.leftover.drain(..max);
+            return Ok(max);
+        }
+
+        let input = self.buffer.fill_more()?;
+
+        if input.is_empty() {
+            return Ok(0);
+        }
+
+        if self.parse_buf.len() < input.len() {
+            self.parse_buf.resize(input.len(), 0);
+        }
+
+        let part = self
+            .request
+            .read_body(input, &mut self.parse_buf)
+            .expect("TODO");
+
+        let input_used = part.input_used();
+
+        let data = part.data();
+
+        let max = buf.len().min(data.len());
+        buf[..max].copy_from_slice(&data[..max]);
+
+        if data.len() > max {
+            self.leftover.extend_from_slice(&data[max..]);
+        }
+
+        self.buffer.consume(input_used);
+
+        Ok(max)
     }
 }
