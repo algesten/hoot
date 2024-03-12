@@ -3,8 +3,8 @@ pub use http;
 mod error;
 pub use error::Error;
 
-pub mod body;
-use body::Body;
+mod body;
+pub use body::Body;
 
 mod handler;
 pub use handler::Handler;
@@ -12,8 +12,11 @@ pub use handler::Handler;
 mod from_req;
 pub use from_req::{FromRequest, FromRequestRef};
 
-pub mod response;
-pub mod router;
+mod response;
+pub use response::{IntoResponse, NotFound};
+
+mod router;
+pub use router::{Router, Service};
 
 pub type Request = http::Request<Body>;
 pub type Response = http::Response<Body>;
