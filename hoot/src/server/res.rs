@@ -8,8 +8,8 @@ use crate::out::Out;
 use crate::types::body::*;
 use crate::types::method::*;
 use crate::types::state::*;
-use crate::types::*;
 use crate::util::LengthChecker;
+use crate::{types::*, ByteWriter};
 use crate::{CallState, HootError, HttpVersion};
 
 pub enum ResponseVariant {
@@ -207,20 +207,6 @@ impl<'a, M: MethodWithResponseBody> Response<'a, SEND_BODY, M, BODY_LENGTH> {
             .expect("SendByteCheck when SEND_BODY")
     }
 
-    pub fn write_bytes(&mut self, bytes: &[u8]) -> Result<()> {
-        trace!("Write bytes len: {}", bytes.len());
-
-        // This returns Err if we try to write more bytes than content-length.
-        self.checker()
-            .append(bytes.len(), HootError::SentMoreThanContentLength)?;
-
-        let mut w = self.out.writer();
-        w.write_bytes(bytes)?;
-        w.commit();
-
-        Ok(())
-    }
-
     pub fn finish(mut self) -> Result<Response<'a, ENDED, (), ()>> {
         trace!("Body finished");
 
@@ -232,8 +218,46 @@ impl<'a, M: MethodWithResponseBody> Response<'a, SEND_BODY, M, BODY_LENGTH> {
     }
 }
 
+impl<'a, M: MethodWithResponseBody> ByteWriter for Response<'a, SEND_BODY, M, BODY_LENGTH> {
+    fn write_bytes(mut self, bytes: &[u8]) -> Result<Self> {
+        trace!("Write bytes len: {}", bytes.len());
+
+        // This returns Err if we try to write more bytes than content-length.
+        self.checker()
+            .append(bytes.len(), HootError::SentMoreThanContentLength)?;
+
+        let mut w = self.out.writer();
+        w.write_bytes(bytes)?;
+        w.commit();
+
+        Ok(self)
+    }
+}
+
 impl<'a, M: MethodWithResponseBody> Response<'a, SEND_BODY, M, BODY_CHUNKED> {
-    pub fn write_chunk(mut self, bytes: &[u8]) -> Result<Self> {
+    pub fn with_trailer(mut self) -> Result<Response<'a, SEND_TRAILER, M, BODY_CHUNKED>> {
+        trace!("With trailer");
+
+        let mut w = self.out.writer();
+        write!(w, "0\r\n").or(OVERFLOW)?;
+        w.commit();
+
+        Ok(self.transition())
+    }
+
+    pub fn finish(mut self) -> Result<Response<'a, ENDED, (), ()>> {
+        trace!("Body chunks finished");
+
+        let mut w = self.out.writer();
+        write!(w, "0\r\n\r\n").or(OVERFLOW)?;
+        w.commit();
+
+        Ok(self.transition())
+    }
+}
+
+impl<'a, M: MethodWithResponseBody> ByteWriter for Response<'a, SEND_BODY, M, BODY_CHUNKED> {
+    fn write_bytes(mut self, bytes: &[u8]) -> Result<Self> {
         trace!("Write chunk len: {}", bytes.len());
 
         // Writing no bytes is ok. Ending the chunk writing is by doing the finish() call.
@@ -255,26 +279,6 @@ impl<'a, M: MethodWithResponseBody> Response<'a, SEND_BODY, M, BODY_CHUNKED> {
         w.commit();
 
         Ok(self)
-    }
-
-    pub fn with_trailer(mut self) -> Result<Response<'a, SEND_TRAILER, M, BODY_CHUNKED>> {
-        trace!("With trailer");
-
-        let mut w = self.out.writer();
-        write!(w, "0\r\n").or(OVERFLOW)?;
-        w.commit();
-
-        Ok(self.transition())
-    }
-
-    pub fn finish(mut self) -> Result<Response<'a, ENDED, (), ()>> {
-        trace!("Body chunks finished");
-
-        let mut w = self.out.writer();
-        write!(w, "0\r\n\r\n").or(OVERFLOW)?;
-        w.commit();
-
-        Ok(self.transition())
     }
 }
 
@@ -335,6 +339,24 @@ impl From<CallState> for ResponseVariant {
             crate::Method::TRACE => ResponseVariant::Trace(ResumeToken::new(value)),
             crate::Method::CONNECT => ResponseVariant::Connect(ResumeToken::new(value)),
             crate::Method::PATCH => ResponseVariant::Patch(ResumeToken::new(value)),
+        }
+    }
+}
+
+impl ResponseVariant {
+    #[doc(hidden)]
+    pub fn unchecked_from_method(method: crate::Method) -> ResponseVariant {
+        use ResponseVariant::*;
+        match method {
+            crate::Method::OPTIONS => Options(ResumeToken::new(CallState::default())),
+            crate::Method::GET => Get(ResumeToken::new(CallState::default())),
+            crate::Method::POST => Post(ResumeToken::new(CallState::default())),
+            crate::Method::PUT => Put(ResumeToken::new(CallState::default())),
+            crate::Method::DELETE => Delete(ResumeToken::new(CallState::default())),
+            crate::Method::HEAD => Head(ResumeToken::new(CallState::default())),
+            crate::Method::TRACE => Trace(ResumeToken::new(CallState::default())),
+            crate::Method::CONNECT => Connect(ResumeToken::new(CallState::default())),
+            crate::Method::PATCH => Patch(ResumeToken::new(CallState::default())),
         }
     }
 }

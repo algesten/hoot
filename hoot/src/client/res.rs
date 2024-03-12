@@ -6,7 +6,7 @@ use crate::body::{do_read_body, RecvBodyMode};
 use crate::header::transmute_headers;
 use crate::types::state::*;
 use crate::types::*;
-use crate::util::{cast_buf_for_headers, LengthChecker};
+use crate::util::{cast_buf_for_headers, compare_lowercase_ascii, LengthChecker};
 use crate::BodyPart;
 use crate::{CallState, Result};
 use crate::{Header, HootError, HttpVersion};
@@ -80,7 +80,17 @@ impl<S: State> Response<S> {
         let http10 = ver == HttpVersion::Http10;
         let method = self.state.method.unwrap(); // Ok for same reason as above.
         let headers = transmute_headers(r.headers);
-        let mode = RecvBodyMode::for_response(http10, method, status.1, headers)?;
+
+        let lookup = |name: &str| {
+            for header in &*headers {
+                if compare_lowercase_ascii(header.name(), name) {
+                    return Some(header.value());
+                }
+            }
+            None
+        };
+
+        let mode = RecvBodyMode::for_response(http10, method, status.1, &lookup)?;
         self.state.recv_body_mode = Some(mode);
 
         // If we are awaiting a length, put a length checker in place

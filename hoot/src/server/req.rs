@@ -5,7 +5,7 @@ use crate::error::Result;
 use crate::header::transmute_headers;
 use crate::types::state::*;
 use crate::types::*;
-use crate::util::{cast_buf_for_headers, LengthChecker};
+use crate::util::{cast_buf_for_headers, compare_lowercase_ascii, LengthChecker};
 use crate::{BodyPart, CallState};
 use crate::{Header, HootError, HttpVersion, Method};
 
@@ -79,7 +79,16 @@ impl<S: State> Request<S> {
         let headers = transmute_headers(r.headers);
         trace!("Headers: {:?}", headers);
 
-        let mode = RecvBodyMode::for_request(http10, method, headers)?;
+        let lookup = |name: &str| {
+            for header in &*headers {
+                if compare_lowercase_ascii(header.name(), name) {
+                    return Some(header.value());
+                }
+            }
+            None
+        };
+
+        let mode = RecvBodyMode::for_request(http10, method, &lookup)?;
         self.state.recv_body_mode = Some(mode);
         trace!("Body mode: {:?}", mode);
 
