@@ -28,7 +28,7 @@ pub fn read_request<Read>(from: Read) -> Result<Request, Error>
 where
     Read: io::Read + Send + 'static,
 {
-    let mut r = hoot::server::Request::new();
+    let mut hoot_req = hoot::server::Request::new();
     let mut from = FillMoreBuffer::new(from);
 
     let mut parse_buf = vec![0_u8; 1024];
@@ -40,7 +40,7 @@ where
             parse_buf.resize(input.len(), 0);
         }
 
-        let attempt = r.try_read_request(&input, &mut parse_buf)?;
+        let attempt = hoot_req.try_read_request(&input, &mut parse_buf)?;
 
         if !attempt.is_success() {
             continue;
@@ -58,7 +58,7 @@ where
     from.consume(input_used);
 
     let body = HootBody {
-        request: r.proceed(),
+        hoot_req: hoot_req.proceed(),
         parse_buf,
         buffer: from,
         leftover: vec![],

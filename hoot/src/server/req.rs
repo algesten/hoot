@@ -203,7 +203,6 @@ impl Request<RECV_BODY> {
             return Err(HootError::BodyNotFinished);
         }
 
-        // Unwrap is OK, because the request method was read earlier.
         Ok(self.state.into())
     }
 }

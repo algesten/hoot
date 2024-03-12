@@ -65,7 +65,7 @@ where
 }
 
 pub(crate) struct HootBody<Read> {
-    pub request: hoot::server::Request<RECV_BODY>,
+    pub hoot_req: hoot::server::Request<RECV_BODY>,
     pub parse_buf: Vec<u8>,
     pub buffer: FillMoreBuffer<Read>,
     pub leftover: Vec<u8>,
@@ -91,7 +91,7 @@ impl<Read: io::Read> io::Read for HootBody<Read> {
         }
 
         let part = self
-            .request
+            .hoot_req
             .read_body(input, &mut self.parse_buf)
             .expect("TODO");
 
