@@ -135,7 +135,7 @@ impl io::Read for HootBody {
         let part = self
             .hoot_req
             .read_body(input, &mut self.parse_buf)
-            .expect("TODO");
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
         let input_used = part.input_used();
 
