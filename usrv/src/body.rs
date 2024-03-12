@@ -1,14 +1,35 @@
-use std::io::{self, Read};
+use std::cell::RefCell;
+use std::io::{self, Cursor, Read};
+use std::mem;
+use std::rc::Rc;
 
 use hoot::types::state::RECV_BODY;
 
 use crate::fill_more::FillMoreBuffer;
 use crate::response::IntoResponse;
 
+#[non_exhaustive]
 pub enum Body {
     Empty,
     Bytes(Vec<u8>),
-    Streaming(Box<dyn Read + Send + 'static>),
+    Streaming(Box<dyn Read + 'static>),
+
+    #[doc(hidden)]
+    #[allow(private_interfaces)]
+    Internal(InternalBody),
+
+    #[doc(hidden)]
+    Cursor(Cursor<Vec<u8>>),
+}
+
+#[derive(Clone)]
+pub(crate) struct InternalBody(pub Rc<RefCell<HootBody>>);
+
+impl InternalBody {
+    pub fn into_inner(self) -> HootBody {
+        let cell = Rc::into_inner(self.0).expect("single reference to InternalBody");
+        cell.into_inner()
+    }
 }
 
 impl Body {
@@ -20,8 +41,22 @@ impl Body {
         Body::Bytes(bytes.into())
     }
 
-    pub fn streaming(read: impl Read + Send + 'static) -> Body {
+    pub fn streaming(read: impl Read + 'static) -> Body {
         Body::Streaming(Box::new(read))
+    }
+
+    pub(crate) fn internal(body: HootBody) -> Body {
+        Body::Internal(InternalBody(Rc::new(RefCell::new(body))))
+    }
+
+    pub(crate) fn size(&self) -> Option<usize> {
+        match self {
+            Body::Empty => Some(0),
+            Body::Bytes(v) => Some(v.len()),
+            Body::Streaming(_) => None,
+            Body::Internal(_) => None,
+            Body::Cursor(v) => Some(v.get_ref().len()),
+        }
     }
 }
 
@@ -64,14 +99,21 @@ where
     }
 }
 
-pub(crate) struct HootBody<Read> {
+pub(crate) struct HootBody {
     pub hoot_req: hoot::server::Request<RECV_BODY>,
     pub parse_buf: Vec<u8>,
-    pub buffer: FillMoreBuffer<Read>,
+    pub buffer: FillMoreBuffer<Box<dyn Read + 'static>>,
     pub leftover: Vec<u8>,
 }
 
-impl<Read: io::Read> io::Read for HootBody<Read> {
+impl HootBody {
+    pub(crate) fn into_buffers(self) -> (Vec<u8>, FillMoreBuffer<Box<dyn Read + 'static>>) {
+        assert!(self.leftover.is_empty());
+        (self.parse_buf, self.buffer)
+    }
+}
+
+impl io::Read for HootBody {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if !self.leftover.is_empty() {
             let max = self.leftover.len().min(buf.len());
@@ -109,5 +151,24 @@ impl<Read: io::Read> io::Read for HootBody<Read> {
         self.buffer.consume(input_used);
 
         Ok(max)
+    }
+}
+
+impl io::Read for Body {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self {
+            Body::Empty => Ok(0),
+            Body::Bytes(v) => {
+                let bytes = mem::take(v);
+                *self = Body::Cursor(Cursor::new(bytes));
+                self.read(buf)
+            }
+            Body::Streaming(v) => v.read(buf),
+            Body::Internal(v) => {
+                let mut borrow = RefCell::borrow_mut(&v.0);
+                borrow.read(buf)
+            }
+            Body::Cursor(v) => v.read(buf),
+        }
     }
 }

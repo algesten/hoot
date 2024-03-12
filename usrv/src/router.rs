@@ -1,10 +1,14 @@
+use std::io;
 use std::marker::PhantomData;
 
 use http::Method;
 
+use crate::body::Body;
 use crate::handler::Handler;
+use crate::read_req::read_from_buffers;
 use crate::response::{IntoResponse, NotFound};
-use crate::{Request, Response};
+use crate::write_res::write_response_with_buffer;
+use crate::{read_request, Error, Request, Response};
 
 pub struct Router<S = ()> {
     _state: PhantomData<S>,
@@ -99,14 +103,52 @@ pub struct Service<S, P> {
 #[allow(private_bounds)]
 impl<S, P: Callable<S>> Service<S, P> {
     pub fn call(&self, state: S, request: Request) -> Response {
-        match self.do_call(state, request) {
+        match self.parent.call(state, request) {
             CallResult::Handled(v) => v,
             CallResult::Unhandled(_, _) => NotFound.into_response(),
         }
     }
 
-    fn do_call(&self, state: S, request: Request) -> CallResult<S> {
-        self.parent.call(state, request)
+    pub fn drive(
+        &self,
+        state: S,
+        reader: impl io::Read + 'static,
+        writer: &mut dyn io::Write,
+    ) -> Result<(), Error>
+    where
+        S: Clone,
+    {
+        let Some(mut request) = read_request(reader)? else {
+            return Ok(());
+        };
+
+        loop {
+            let request_method = request.method().clone();
+
+            let Body::Internal(body) = request.body() else {
+                unreachable!()
+            };
+
+            // This is a cheap clone using Rc.
+            let body = body.clone();
+
+            // The call consumes the Body::Internal instance in the Request<Body>
+            let response = self.call(state.clone(), request);
+
+            // At this pint only the local body exists, which means into_inner() will
+            // succeed to unwrap the only Rc reference.
+            let (mut parse_buf, fill_buf) = body.into_inner().into_buffers();
+
+            write_response_with_buffer(request_method, response, writer, &mut parse_buf)?;
+
+            let Some(next_request) = read_from_buffers(parse_buf, fill_buf)? else {
+                break;
+            };
+
+            request = next_request;
+        }
+
+        Ok(())
     }
 }
 
