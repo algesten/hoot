@@ -1,6 +1,15 @@
+use std::marker::PhantomData;
+
 use crate::from_req::{FromRequest, FromRequestRef};
 use crate::response::IntoResponse;
 use crate::{Request, Response};
+
+pub struct U<T>(PhantomData<T>);
+
+// SAFETY: Without U<T>, the compiler thinks a concrete Handler<((), Request<Body>), AppState>
+// to be !Send, since Body is (deliberately) !Send. This is the compiler being overly cautious,
+// since we do not send Request<Body> across threads.
+unsafe impl<T> Send for U<T> {}
 
 pub trait Handler<T, S>: Clone + Send + Sized + 'static {
     fn call(self, state: S, request: Request) -> Response;
@@ -26,7 +35,7 @@ where
     }
 }
 
-impl<S, F, T1, Ret> Handler<((), T1), S> for F
+impl<S, F, T1, Ret> Handler<((), U<T1>), S> for F
 where
     F: FnOnce(T1) -> Ret + Clone + Send + 'static,
     T1: FromRequest<S>,
@@ -41,7 +50,7 @@ where
     }
 }
 
-impl<S, F, T1, Ret> Handler<(((),), T1), S> for F
+impl<S, F, T1, Ret> Handler<(((),), U<T1>), S> for F
 where
     F: FnOnce(S, T1) -> Ret + Clone + Send + 'static,
     T1: FromRequest<S>,
@@ -61,7 +70,7 @@ macro_rules! impl_handler {
         [$($ty:ident),*], $last:ident
     ) => {
         #[allow(non_snake_case)]
-        impl<S, F, $($ty,)* $last, Ret> Handler<((), $($ty,)* $last), S> for F
+        impl<S, F, $($ty,)* $last, Ret> Handler<((), $(U<$ty>,)* U<$last>), S> for F
         where
             F: FnOnce($($ty,)* $last) -> Ret + Clone + Send + 'static,
             Ret: IntoResponse,
@@ -86,7 +95,7 @@ macro_rules! impl_handler {
             }
         }
         #[allow(non_snake_case)]
-        impl<S, F, $($ty,)* $last, Ret> Handler<(((),), $($ty,)* $last), S> for F
+        impl<S, F, $($ty,)* $last, Ret> Handler<(((),), $(U<$ty>,)* U<$last>), S> for F
         where
             F: FnOnce(S, $($ty,)* $last) -> Ret + Clone + Send + 'static,
             Ret: IntoResponse,

@@ -1,4 +1,7 @@
+use core::fmt;
+use std::cell::RefCell;
 use std::io::{self, Cursor, Read};
+use std::rc::Rc;
 
 use hoot::types::state::RECV_BODY;
 
@@ -9,11 +12,11 @@ pub struct Body {
     inner: Inner,
 }
 
-pub enum Inner {
+enum Inner {
     Empty,
     Bytes(Cursor<Vec<u8>>),
-    Streaming(Box<dyn Read + Send + 'static>),
-    HootBody(HootBody),
+    Streaming(Box<dyn Read + 'static>),
+    HootBody(Rc<RefCell<HootBody>>),
 }
 
 impl From<Inner> for Body {
@@ -35,8 +38,24 @@ impl Body {
         Inner::Streaming(Box::new(read)).into()
     }
 
-    pub fn hoot(body: HootBody) -> Body {
-        Inner::HootBody(body).into()
+    pub(crate) fn hoot(body: HootBody) -> Body {
+        Inner::HootBody(Rc::new(RefCell::new(body))).into()
+    }
+
+    pub(crate) fn hoot_clone(&self) -> Body {
+        let Inner::HootBody(rc) = &self.inner else {
+            unreachable!()
+        };
+        let clone = Rc::clone(rc);
+        Inner::HootBody(clone).into()
+    }
+
+    pub(crate) fn hoot_unwrap(self) -> HootBody {
+        let Inner::HootBody(rc) = self.inner else {
+            unreachable!()
+        };
+        let refcell = Rc::try_unwrap(rc).expect("single Rc to HootBody");
+        refcell.into_inner()
     }
 
     pub(crate) fn size(&self) -> Option<usize> {
@@ -45,14 +64,6 @@ impl Body {
             Inner::Bytes(v) => Some(v.get_ref().len()),
             Inner::Streaming(_) => None,
             Inner::HootBody(_) => None,
-        }
-    }
-
-    pub(crate) fn as_hoot_body(&self) -> Option<&HootBody> {
-        if let Inner::HootBody(body) = &self.inner {
-            Some(body)
-        } else {
-            None
         }
     }
 }
@@ -99,14 +110,12 @@ where
 pub(crate) struct HootBody {
     pub hoot_req: hoot::server::Request<RECV_BODY>,
     pub parse_buf: Vec<u8>,
-    pub buffer: FillMoreBuffer<Box<dyn io::Read + Send + 'static>>,
+    pub buffer: FillMoreBuffer<Box<dyn io::Read + 'static>>,
     pub leftover: Vec<u8>,
 }
 
 impl HootBody {
-    pub(crate) fn into_buffers(
-        self,
-    ) -> (Vec<u8>, FillMoreBuffer<Box<dyn io::Read + Send + 'static>>) {
+    pub(crate) fn into_buffers(self) -> (Vec<u8>, FillMoreBuffer<Box<dyn io::Read + 'static>>) {
         assert!(self.leftover.is_empty());
         (self.parse_buf, self.buffer)
     }
@@ -159,7 +168,16 @@ impl io::Read for Body {
             Inner::Empty => Ok(0),
             Inner::Bytes(v) => v.read(buf),
             Inner::Streaming(v) => v.read(buf),
-            Inner::HootBody(v) => v.read(buf),
+            Inner::HootBody(v) => {
+                let mut borrow = v.borrow_mut();
+                borrow.read(buf)
+            }
         }
+    }
+}
+
+impl fmt::Debug for HootBody {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("HootBody").finish()
     }
 }

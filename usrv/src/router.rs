@@ -109,6 +109,7 @@ impl<S, P: Callable<S>> Service<S, P> {
         }
     }
 
+    #[allow(unused)]
     pub fn drive(
         &self,
         state: S,
@@ -125,19 +126,21 @@ impl<S, P: Callable<S>> Service<S, P> {
         loop {
             let request_method = request.method().clone();
 
-            let Some(body) = request.body().as_hoot_body() else {
-                unreachable!()
-            };
+            // This is a cheap clone using Rc. This is so we can retain the HootBody
+            // for consecutive requests. After this line we have two instances of Rc
+            // to the same HootBody.
+            let body = request.body().hoot_clone();
 
-            // This is a cheap clone using Rc.
-            let body = body.clone();
-
-            // The call consumes the Body::Internal instance in the Request<Body>
+            // The call consumes the Rc instance in Request<Body>, leaving a single
+            // Rc in the "body" var. Body is deliberately !Send, which means the,
+            // Handlers nested in the call cannot retain the copy to the Rc<HootBody>.
             let response = self.call(state.clone(), request);
 
-            // At this pint only the local body exists, which means into_inner() will
-            // succeed to unwrap the only Rc reference.
-            let (mut parse_buf, fill_buf) = body.into_buffers();
+            // This should succeed because there should be only one Rc.
+            let hoot_body = body.hoot_unwrap();
+
+            // Get the buffers back to reuse for next request.
+            let (mut parse_buf, fill_buf) = hoot_body.into_buffers();
 
             write_response_with_buffer(request_method, response, writer, &mut parse_buf)?;
 
