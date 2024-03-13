@@ -12,7 +12,7 @@ use crate::response::IntoResponse;
 pub enum Body {
     Empty,
     Bytes(Vec<u8>),
-    Streaming(Box<dyn Read + 'static>),
+    Streaming(Box<dyn Read + Send + 'static>),
 
     #[doc(hidden)]
     #[allow(private_interfaces)]
@@ -23,10 +23,12 @@ pub enum Body {
 }
 
 #[derive(Clone)]
-pub(crate) struct InternalBody(pub Rc<RefCell<HootBody>>);
+pub(crate) struct InternalBody(pub Rc<RefCell<HootBody<Box<dyn io::Read + 'static>>>>);
+
+unsafe impl Send for InternalBody {}
 
 impl InternalBody {
-    pub fn into_inner(self) -> HootBody {
+    pub fn into_inner(self) -> HootBody<Box<dyn io::Read + 'static>> {
         let cell = Rc::into_inner(self.0).expect("single reference to InternalBody");
         cell.into_inner()
     }
@@ -41,11 +43,11 @@ impl Body {
         Body::Bytes(bytes.into())
     }
 
-    pub fn streaming(read: impl Read + 'static) -> Body {
+    pub fn streaming(read: impl Read + Send + 'static) -> Body {
         Body::Streaming(Box::new(read))
     }
 
-    pub(crate) fn internal(body: HootBody) -> Body {
+    pub(crate) fn internal(body: HootBody<Box<dyn io::Read + 'static>>) -> Body {
         Body::Internal(InternalBody(Rc::new(RefCell::new(body))))
     }
 
@@ -99,21 +101,24 @@ where
     }
 }
 
-pub(crate) struct HootBody {
+pub(crate) struct HootBody<Read> {
     pub hoot_req: hoot::server::Request<RECV_BODY>,
     pub parse_buf: Vec<u8>,
-    pub buffer: FillMoreBuffer<Box<dyn Read + 'static>>,
+    pub buffer: FillMoreBuffer<Read>,
     pub leftover: Vec<u8>,
 }
 
-impl HootBody {
-    pub(crate) fn into_buffers(self) -> (Vec<u8>, FillMoreBuffer<Box<dyn Read + 'static>>) {
+impl<Read> HootBody<Read> {
+    pub(crate) fn into_buffers(self) -> (Vec<u8>, FillMoreBuffer<Read>) {
         assert!(self.leftover.is_empty());
         (self.parse_buf, self.buffer)
     }
 }
 
-impl io::Read for HootBody {
+impl<Read> io::Read for HootBody<Read>
+where
+    Read: io::Read,
+{
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if !self.leftover.is_empty() {
             let max = self.leftover.len().min(buf.len());

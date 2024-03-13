@@ -1,5 +1,5 @@
-use std::io;
 use std::marker::PhantomData;
+use std::{io, thread};
 
 use http::Method;
 
@@ -7,6 +7,7 @@ use crate::body::Body;
 use crate::handler::Handler;
 use crate::read_req::read_from_buffers;
 use crate::response::{IntoResponse, NotFound};
+use crate::server::Acceptor;
 use crate::write_res::write_response_with_buffer;
 use crate::{read_request, Error, Request, Response};
 
@@ -150,6 +151,29 @@ impl<S, P: Callable<S>> Service<S, P> {
 
         Ok(())
     }
+
+    pub fn run<A>(&self, state: S, mut acceptor: A) -> io::Result<()>
+    where
+        S: Clone + Send + 'static,
+        P: Send + 'static,
+        A: Acceptor,
+    {
+        loop {
+            let (reader, mut writer, _breaker) = acceptor.accept()?;
+
+            let service = self.clone();
+            let state = state.clone();
+
+            thread::spawn(move || {
+                if let Err(e) = service.drive(state, reader, &mut writer) {
+                    match e {
+                        Error::Hoot(e) => error!("service error: {}", e),
+                        Error::Io(e) => debug!("client disconnect: {}", e),
+                    }
+                }
+            });
+        }
+    }
 }
 
 impl<S> MethodRouter<S> for Router<S> {
@@ -260,6 +284,8 @@ impl<'a, T, S, H: Clone, P: Clone> Clone for MethodHandler<'a, T, S, H, P> {
 
 #[cfg(test)]
 mod test {
+    use crate::server::test::TestAcceptor;
+
     use super::*;
 
     #[test]
@@ -293,5 +319,26 @@ mod test {
         let cloned = service.clone();
 
         let _response = cloned.call(&mut state, request);
+    }
+
+    #[test]
+    fn run_service() {
+        #[derive(Clone)]
+        struct AppState;
+
+        fn handle(_req: Request) -> String {
+            "Hello World!".into()
+        }
+
+        let service = Router::with_state::<AppState>()
+            //
+            .get("/", handle)
+            .finish();
+
+        let state = AppState;
+
+        let acceptor = TestAcceptor::new("");
+
+        service.run(state, acceptor).unwrap();
     }
 }

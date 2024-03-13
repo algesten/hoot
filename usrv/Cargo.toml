@@ -23,4 +23,5 @@ std = []
 [dependencies]
 hoot = { path = "../hoot", version = "0.1.4", features = ["http_crate", "std"] }
 http = "1.1.0"
+log = "0.4.21"
 thiserror = "1.0.58"

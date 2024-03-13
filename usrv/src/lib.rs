@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate log;
+
 pub use http;
 
 mod error;
@@ -28,3 +31,5 @@ pub use read_req::read_request;
 
 mod write_res;
 pub use write_res::write_response;
+
+pub mod server;
