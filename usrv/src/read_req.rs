@@ -6,11 +6,11 @@ use crate::{Error, Request};
 
 pub fn read_request<Read>(reader: Read) -> Result<Option<Request>, Error>
 where
-    Read: io::Read + 'static,
+    Read: io::Read + Send + 'static,
 {
     let parse_buf = vec![0_u8; 1024];
 
-    let boxed: Box<dyn io::Read + 'static> = Box::new(reader);
+    let boxed: Box<dyn io::Read + Send + 'static> = Box::new(reader);
     let fill_buf = FillMoreBuffer::new(boxed);
 
     read_from_buffers(parse_buf, fill_buf)
@@ -18,7 +18,7 @@ where
 
 pub(crate) fn read_from_buffers(
     mut parse_buf: Vec<u8>,
-    mut fill_buf: FillMoreBuffer<Box<dyn io::Read + 'static>>,
+    mut fill_buf: FillMoreBuffer<Box<dyn io::Read + Send + 'static>>,
 ) -> Result<Option<Request>, Error> {
     let mut hoot_req = hoot::server::Request::new();
 
@@ -53,7 +53,7 @@ pub(crate) fn read_from_buffers(
         leftover: vec![],
     };
 
-    let body = Body::internal(body);
+    let body = Body::hoot(body);
 
     let (parts, _) = req.into_parts();
 

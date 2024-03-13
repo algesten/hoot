@@ -3,7 +3,6 @@ use std::{io, thread};
 
 use http::Method;
 
-use crate::body::Body;
 use crate::handler::Handler;
 use crate::read_req::read_from_buffers;
 use crate::response::{IntoResponse, NotFound};
@@ -113,7 +112,7 @@ impl<S, P: Callable<S>> Service<S, P> {
     pub fn drive(
         &self,
         state: S,
-        reader: impl io::Read + 'static,
+        reader: impl io::Read + Send + 'static,
         writer: &mut dyn io::Write,
     ) -> Result<(), Error>
     where
@@ -126,7 +125,7 @@ impl<S, P: Callable<S>> Service<S, P> {
         loop {
             let request_method = request.method().clone();
 
-            let Body::Internal(body) = request.body() else {
+            let Some(body) = request.body().as_hoot_body() else {
                 unreachable!()
             };
 
@@ -138,7 +137,7 @@ impl<S, P: Callable<S>> Service<S, P> {
 
             // At this pint only the local body exists, which means into_inner() will
             // succeed to unwrap the only Rc reference.
-            let (mut parse_buf, fill_buf) = body.into_inner().into_buffers();
+            let (mut parse_buf, fill_buf) = body.into_buffers();
 
             write_response_with_buffer(request_method, response, writer, &mut parse_buf)?;
 

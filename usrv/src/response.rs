@@ -12,7 +12,7 @@ impl IntoResponse for NotFound {
     fn into_response(self) -> Response {
         http::Response::builder()
             .status(404)
-            .body(Body::Empty)
+            .body(Body::empty())
             .unwrap()
     }
 }

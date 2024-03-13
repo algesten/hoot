@@ -1,94 +1,89 @@
-use std::cell::RefCell;
 use std::io::{self, Cursor, Read};
-use std::mem;
-use std::rc::Rc;
 
 use hoot::types::state::RECV_BODY;
 
 use crate::fill_more::FillMoreBuffer;
 use crate::response::IntoResponse;
 
-#[non_exhaustive]
-pub enum Body {
-    Empty,
-    Bytes(Vec<u8>),
-    Streaming(Box<dyn Read + Send + 'static>),
-
-    #[doc(hidden)]
-    #[allow(private_interfaces)]
-    Internal(InternalBody),
-
-    #[doc(hidden)]
-    Cursor(Cursor<Vec<u8>>),
+pub struct Body {
+    inner: Inner,
 }
 
-#[derive(Clone)]
-pub(crate) struct InternalBody(pub Rc<RefCell<HootBody<Box<dyn io::Read + 'static>>>>);
+pub enum Inner {
+    Empty,
+    Bytes(Cursor<Vec<u8>>),
+    Streaming(Box<dyn Read + Send + 'static>),
+    HootBody(HootBody),
+}
 
-unsafe impl Send for InternalBody {}
-
-impl InternalBody {
-    pub fn into_inner(self) -> HootBody<Box<dyn io::Read + 'static>> {
-        let cell = Rc::into_inner(self.0).expect("single reference to InternalBody");
-        cell.into_inner()
+impl From<Inner> for Body {
+    fn from(inner: Inner) -> Self {
+        Body { inner }
     }
 }
 
 impl Body {
     pub fn empty() -> Body {
-        Body::Empty
+        Inner::Empty.into()
     }
 
     pub fn bytes(bytes: impl Into<Vec<u8>>) -> Body {
-        Body::Bytes(bytes.into())
+        Inner::Bytes(Cursor::new(bytes.into())).into()
     }
 
     pub fn streaming(read: impl Read + Send + 'static) -> Body {
-        Body::Streaming(Box::new(read))
+        Inner::Streaming(Box::new(read)).into()
     }
 
-    pub(crate) fn internal(body: HootBody<Box<dyn io::Read + 'static>>) -> Body {
-        Body::Internal(InternalBody(Rc::new(RefCell::new(body))))
+    pub fn hoot(body: HootBody) -> Body {
+        Inner::HootBody(body).into()
     }
 
     pub(crate) fn size(&self) -> Option<usize> {
-        match self {
-            Body::Empty => Some(0),
-            Body::Bytes(v) => Some(v.len()),
-            Body::Streaming(_) => None,
-            Body::Internal(_) => None,
-            Body::Cursor(v) => Some(v.get_ref().len()),
+        match &self.inner {
+            Inner::Empty => Some(0),
+            Inner::Bytes(v) => Some(v.get_ref().len()),
+            Inner::Streaming(_) => None,
+            Inner::HootBody(_) => None,
+        }
+    }
+
+    pub(crate) fn as_hoot_body(&self) -> Option<&HootBody> {
+        if let Inner::HootBody(body) = &self.inner {
+            Some(body)
+        } else {
+            None
         }
     }
 }
 
 impl From<()> for Body {
     fn from(_: ()) -> Self {
-        Self::Empty
+        Body::empty()
     }
 }
 
 impl From<Vec<u8>> for Body {
     fn from(value: Vec<u8>) -> Self {
-        Self::Bytes(value)
+        Body::bytes(value)
     }
 }
 
 impl From<&[u8]> for Body {
     fn from(value: &[u8]) -> Self {
-        Self::Bytes(value.to_vec())
+        Body::bytes(value)
     }
 }
 
 impl From<String> for Body {
     fn from(value: String) -> Self {
-        Self::Bytes(value.into_bytes())
+        Body::bytes(value)
     }
 }
 
 impl From<&str> for Body {
     fn from(value: &str) -> Self {
-        Self::Bytes(value.as_bytes().to_vec())
+        Body::bytes(value)
     }
 }
 
@@ -101,24 +96,23 @@ where
     }
 }
 
-pub(crate) struct HootBody<Read> {
+pub(crate) struct HootBody {
     pub hoot_req: hoot::server::Request<RECV_BODY>,
     pub parse_buf: Vec<u8>,
-    pub buffer: FillMoreBuffer<Read>,
+    pub buffer: FillMoreBuffer<Box<dyn io::Read + Send + 'static>>,
     pub leftover: Vec<u8>,
 }
 
-impl<Read> HootBody<Read> {
-    pub(crate) fn into_buffers(self) -> (Vec<u8>, FillMoreBuffer<Read>) {
+impl HootBody {
+    pub(crate) fn into_buffers(
+        self,
+    ) -> (Vec<u8>, FillMoreBuffer<Box<dyn io::Read + Send + 'static>>) {
         assert!(self.leftover.is_empty());
         (self.parse_buf, self.buffer)
     }
 }
 
-impl<Read> io::Read for HootBody<Read>
-where
-    Read: io::Read,
-{
+impl io::Read for HootBody {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if !self.leftover.is_empty() {
             let max = self.leftover.len().min(buf.len());
@@ -161,19 +155,11 @@ where
 
 impl io::Read for Body {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        match self {
-            Body::Empty => Ok(0),
-            Body::Bytes(v) => {
-                let bytes = mem::take(v);
-                *self = Body::Cursor(Cursor::new(bytes));
-                self.read(buf)
-            }
-            Body::Streaming(v) => v.read(buf),
-            Body::Internal(v) => {
-                let mut borrow = RefCell::borrow_mut(&v.0);
-                borrow.read(buf)
-            }
-            Body::Cursor(v) => v.read(buf),
+        match &mut self.inner {
+            Inner::Empty => Ok(0),
+            Inner::Bytes(v) => v.read(buf),
+            Inner::Streaming(v) => v.read(buf),
+            Inner::HootBody(v) => v.read(buf),
         }
     }
 }
