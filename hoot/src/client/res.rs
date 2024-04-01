@@ -247,3 +247,54 @@ mod test {
         Ok(())
     }
 }
+
+/// Type encapsulating a Response status text.
+///
+/// The http crate eschews the status text since it's out of fashion. We want to support it,
+/// and this newtype is used to store it as an http crate `Extension`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg(feature = "http_crate")]
+pub struct StatusText(pub String);
+
+#[cfg(feature = "http_crate")]
+impl std::ops::Deref for StatusText {
+    type Target = String;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[cfg(feature = "http_crate")]
+impl<'a, 'b> TryFrom<ResponseAttempt<'a, 'b>> for http::Response<()> {
+    type Error = HootError;
+
+    fn try_from(attempt: ResponseAttempt<'a, 'b>) -> Result<Self> {
+        if !attempt.is_success() {
+            return Err(HootError::IncompleteResponseAttempt);
+        }
+
+        // unwraps ok due to is_success() check above.
+        let status = attempt.status().unwrap();
+        let headers = attempt.headers().unwrap();
+
+        let http_status = http::StatusCode::from_u16(status.code())
+            .map_err(|_| HootError::HttpRefusedStatusCode)?;
+
+        let mut builder = http::Response::builder()
+            .version(status.version().into())
+            .status(http_status)
+            // http crate eschews the status text since it's out of fashion.
+            .extension(StatusText(status.text().to_owned()));
+
+        for header in headers {
+            builder = builder.header(header.name(), header.value());
+        }
+
+        let res = builder
+            .body(())
+            .expect("Successful http::Response conversion");
+
+        Ok(res)
+    }
+}
