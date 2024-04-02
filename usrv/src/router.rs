@@ -355,8 +355,8 @@ mod test {
 
         let state = AppState;
 
-        let acceptor = TestAcceptor::new(http::Request::get("/").body(()).unwrap());
+        let mut acceptor = TestAcceptor::new(http::Request::get("/").body(()).unwrap());
 
-        service.run(state, acceptor).unwrap();
+        let writer = service.execute(state, &mut acceptor).unwrap();
     }
 }

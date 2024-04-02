@@ -46,12 +46,7 @@ pub(crate) fn read_from_buffers(
     // Remove the amount of input that was used up for the request header.
     fill_buf.consume(input_used);
 
-    let body = HootBody {
-        hoot_req: hoot_req.proceed(),
-        parse_buf,
-        buffer: fill_buf,
-        leftover: vec![],
-    };
+    let body = HootBody::new(hoot_req.proceed(), parse_buf, fill_buf);
 
     let body = Body::hoot(body);
 

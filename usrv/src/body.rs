@@ -108,10 +108,56 @@ where
 }
 
 pub(crate) struct HootBody {
-    pub hoot_req: hoot::server::Request<RECV_BODY>,
-    pub parse_buf: Vec<u8>,
-    pub buffer: FillMoreBuffer<Box<dyn io::Read + 'static>>,
-    pub leftover: Vec<u8>,
+    hoot_req: Hoot,
+    parse_buf: Vec<u8>,
+    buffer: FillMoreBuffer<Box<dyn io::Read + 'static>>,
+    leftover: Vec<u8>,
+}
+
+impl HootBody {
+    pub(crate) fn new(
+        hoot: impl Into<Hoot>,
+        parse_buf: Vec<u8>,
+        buffer: FillMoreBuffer<Box<dyn io::Read + 'static>>,
+    ) -> Self {
+        HootBody {
+            hoot_req: hoot.into(),
+            parse_buf,
+            buffer,
+            leftover: vec![],
+        }
+    }
+}
+
+pub(crate) enum Hoot {
+    Req(hoot::server::Request<RECV_BODY>),
+    Res(hoot::client::Response<RECV_BODY>),
+}
+
+impl Hoot {
+    fn read_body<'a, 'b>(
+        &mut self,
+        src: &'a [u8],
+        dst: &'b mut [u8],
+    ) -> io::Result<hoot::BodyPart<'b>> {
+        match self {
+            Hoot::Req(v) => v.read_body(src, dst),
+            Hoot::Res(v) => v.read_body(src, dst),
+        }
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+    }
+}
+
+impl From<hoot::server::Request<RECV_BODY>> for Hoot {
+    fn from(value: hoot::server::Request<RECV_BODY>) -> Self {
+        Hoot::Req(value)
+    }
+}
+
+impl From<hoot::client::Response<RECV_BODY>> for Hoot {
+    fn from(value: hoot::client::Response<RECV_BODY>) -> Self {
+        Hoot::Res(value)
+    }
 }
 
 impl HootBody {
@@ -140,10 +186,7 @@ impl io::Read for HootBody {
             self.parse_buf.resize(input.len(), 0);
         }
 
-        let part = self
-            .hoot_req
-            .read_body(input, &mut self.parse_buf)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        let part = self.hoot_req.read_body(input, &mut self.parse_buf)?;
 
         let input_used = part.input_used();
 

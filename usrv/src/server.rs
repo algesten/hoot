@@ -49,13 +49,15 @@ pub mod tcp {
 }
 
 pub mod test {
-    use std::io::{self, Read, Write};
+    use std::io::{self, BufRead, Read, Write};
 
     use hoot::types::state::{ENDED, RECV_RESPONSE, SEND_HEADERS};
     use hoot::types::version::HTTP_11;
     use hoot::BodyWriter;
     use http::{HeaderName, HeaderValue, Method};
 
+    use crate::body::HootBody;
+    use crate::fill_more::FillMoreBuffer;
     use crate::{http, Body, Error, Request};
 
     use super::Acceptor;
@@ -227,6 +229,40 @@ pub mod test {
         hoot_res: hoot::client::Response<RECV_RESPONSE>,
     }
 
+    impl TryFrom<TestWriter> for http::Response<Body> {
+        type Error = Error;
+
+        fn try_from(value: TestWriter) -> Result<Self, Self::Error> {
+            let TestWriter {
+                mut response,
+                mut hoot_res,
+            } = value;
+
+            response.set_position(0);
+            let mut tmp = vec![0; 10 * 1024];
+
+            let attempt = hoot_res.try_read_response(response.remaining(), &mut tmp)?;
+            assert!(attempt.is_success());
+
+            let amt = attempt.input_used();
+
+            let res: http::Response<()> = attempt.try_into()?;
+            let (parts, _) = res.into_parts();
+
+            response.consume(amt);
+            let response: Box<dyn io::Read + 'static> = Box::new(response);
+
+            let hoot_res = hoot_res.proceed();
+
+            let buffer = FillMoreBuffer::new(response);
+
+            let hoot_body = HootBody::new(hoot_res, tmp, buffer);
+            let body = Body::hoot(hoot_body);
+
+            Ok(http::Response::from_parts(parts, body))
+        }
+    }
+
     impl io::Write for TestWriter {
         fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
             self.response.write(buf)
@@ -234,6 +270,17 @@ pub mod test {
 
         fn flush(&mut self) -> io::Result<()> {
             self.response.flush()
+        }
+    }
+
+    trait CursorRemaining {
+        fn remaining(&self) -> &[u8];
+    }
+
+    impl CursorRemaining for std::io::Cursor<Vec<u8>> {
+        fn remaining(&self) -> &[u8] {
+            let p = self.position() as usize;
+            &self.get_ref()[p..]
         }
     }
 }
