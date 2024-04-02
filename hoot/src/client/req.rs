@@ -112,7 +112,7 @@ impl<'a, S: State, V: Version, M: Method, B: BodyType> Request<'a, S, V, M, B> {
     }
 
     #[cfg(feature = "std")]
-    pub fn write_to(mut self, write: &mut impl std::io::Write) -> std::io::Result<Self> {
+    pub fn write_to(mut self, write: &mut dyn std::io::Write) -> std::io::Result<Self> {
         write.write_all(self.out.as_bytes())?;
         self.out.reset_position();
         Ok(self)

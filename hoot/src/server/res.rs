@@ -45,7 +45,7 @@ pub struct ResumeToken<S: State, M: Method, B: BodyType> {
 }
 
 impl ResumeToken<(), (), ()> {
-    pub(crate) fn new<M: Method>(state: CallState) -> ResumeToken<SEND_STATUS, M, ()> {
+    fn new<M: Method>(state: CallState) -> ResumeToken<SEND_STATUS, M, ()> {
         ResumeToken {
             typ: Typ(PhantomData, PhantomData, PhantomData),
             state,
@@ -98,6 +98,13 @@ impl<'a, S: State, M: Method, B: BodyType> Response<'a, S, M, B> {
             },
             out: self.out,
         }
+    }
+
+    #[cfg(feature = "std")]
+    pub fn write_to(mut self, write: &mut dyn std::io::Write) -> std::io::Result<Self> {
+        write.write_all(self.out.as_bytes())?;
+        self.out.reset_position();
+        Ok(self)
     }
 
     pub fn resume(token: ResumeToken<S, M, B>, buf: &'a mut [u8]) -> Response<'a, S, M, B> {
@@ -353,18 +360,24 @@ impl From<CallState> for ResponseVariant {
 
 impl ResponseVariant {
     #[doc(hidden)]
-    pub fn unchecked_from_method(method: crate::Method) -> ResponseVariant {
+    pub fn unchecked_from_method(
+        method: crate::Method,
+        version: crate::HttpVersion,
+    ) -> ResponseVariant {
+        let mut state = CallState::default();
+        state.version = Some(version);
+
         use ResponseVariant::*;
         match method {
-            crate::Method::OPTIONS => Options(ResumeToken::new(CallState::default())),
-            crate::Method::GET => Get(ResumeToken::new(CallState::default())),
-            crate::Method::POST => Post(ResumeToken::new(CallState::default())),
-            crate::Method::PUT => Put(ResumeToken::new(CallState::default())),
-            crate::Method::DELETE => Delete(ResumeToken::new(CallState::default())),
-            crate::Method::HEAD => Head(ResumeToken::new(CallState::default())),
-            crate::Method::TRACE => Trace(ResumeToken::new(CallState::default())),
-            crate::Method::CONNECT => Connect(ResumeToken::new(CallState::default())),
-            crate::Method::PATCH => Patch(ResumeToken::new(CallState::default())),
+            crate::Method::OPTIONS => Options(ResumeToken::new(state)),
+            crate::Method::GET => Get(ResumeToken::new(state)),
+            crate::Method::POST => Post(ResumeToken::new(state)),
+            crate::Method::PUT => Put(ResumeToken::new(state)),
+            crate::Method::DELETE => Delete(ResumeToken::new(state)),
+            crate::Method::HEAD => Head(ResumeToken::new(state)),
+            crate::Method::TRACE => Trace(ResumeToken::new(state)),
+            crate::Method::CONNECT => Connect(ResumeToken::new(state)),
+            crate::Method::PATCH => Patch(ResumeToken::new(state)),
         }
     }
 }
