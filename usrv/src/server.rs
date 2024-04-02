@@ -109,7 +109,7 @@ pub mod test {
 
         let hoot_req = hoot::client::Request::new(&mut buf).http_11();
 
-        let host = req.uri().host().expect("test request URI to have a host");
+        let host = req.uri().host().unwrap_or("localhost");
         let path = req.uri().path();
         let m = req.method();
         let hs = req.headers().iter();
@@ -180,9 +180,9 @@ pub mod test {
             write: &mut impl Write,
         ) -> Result<hoot::client::Output<'b, ENDED, (), (), ()>, Error> {
             // TODO can we use the buffer in hoot directly?
-            // The -30 is because if we do chunked transfer every chunk needs
+            // The -10 is because if we do chunked transfer every chunk needs
             // a bit of overhead.
-            let mut tmp = vec![0; 10 * 1024 - 30];
+            let mut tmp = vec![0; 10 * 1024 - 10];
 
             if let Some(size) = body.size() {
                 let mut hoot_req = hoot_req.with_body(size)?.write_to(write)?;
@@ -227,6 +227,12 @@ pub mod test {
     pub struct TestWriter {
         response: io::Cursor<Vec<u8>>,
         hoot_res: hoot::client::Response<RECV_RESPONSE>,
+    }
+
+    impl TestWriter {
+        pub fn into_response(self) -> Result<http::Response<Body>, Error> {
+            self.try_into()
+        }
     }
 
     impl TryFrom<TestWriter> for http::Response<Body> {

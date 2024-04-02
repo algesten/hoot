@@ -6,10 +6,11 @@ use std::rc::Rc;
 use hoot::types::state::RECV_BODY;
 
 use crate::fill_more::FillMoreBuffer;
-use crate::response::IntoResponse;
+use crate::Error;
 
 pub struct Body {
     inner: Inner,
+    pub(crate) ctype: Option<ContentType>,
 }
 
 enum Inner {
@@ -19,9 +20,12 @@ enum Inner {
     HootBody(Rc<RefCell<HootBody>>),
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct ContentType(pub &'static str);
+
 impl From<Inner> for Body {
     fn from(inner: Inner) -> Self {
-        Body { inner }
+        Body { inner, ctype: None }
     }
 }
 
@@ -66,6 +70,13 @@ impl Body {
             Inner::HootBody(_) => None,
         }
     }
+
+    pub fn into_string(self, limit: u64) -> Result<String, Error> {
+        let mut buf = vec![];
+        self.take(limit).read_to_end(&mut buf)?;
+        let s = String::from_utf8(buf)?;
+        Ok(s)
+    }
 }
 
 impl From<()> for Body {
@@ -88,22 +99,17 @@ impl From<&[u8]> for Body {
 
 impl From<String> for Body {
     fn from(value: String) -> Self {
-        Body::bytes(value)
+        let mut b = Body::bytes(value);
+        b.ctype = Some(ContentType("text/plain; charset=utf-8"));
+        b
     }
 }
 
 impl From<&str> for Body {
     fn from(value: &str) -> Self {
-        Body::bytes(value)
-    }
-}
-
-impl<T> IntoResponse for T
-where
-    T: Into<Body>,
-{
-    fn into_response(self) -> crate::Response {
-        http::Response::new(self.into())
+        let mut b = Body::bytes(value);
+        b.ctype = Some(ContentType("text/plain; charset=utf-8"));
+        b
     }
 }
 
@@ -216,6 +222,21 @@ impl io::Read for Body {
                 borrow.read(buf)
             }
         }
+    }
+}
+
+impl fmt::Debug for Body {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Body {{ ")?;
+
+        match &self.inner {
+            Inner::Empty => write!(f, "Empty")?,
+            Inner::Bytes(v) => write!(f, "Bytes({})", v.get_ref().len())?,
+            Inner::Streaming(_) => write!(f, "Streaming")?,
+            Inner::HootBody(v) => write!(f, "{:?}", v)?,
+        }
+
+        write!(f, " }}")
     }
 }
 

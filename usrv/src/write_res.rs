@@ -11,22 +11,32 @@ use crate::{Error, Response};
 
 pub fn write_response(
     request_method: http::Method,
+    request_version: http::Version,
     response: Response,
     writer: &mut dyn io::Write,
 ) -> Result<(), Error> {
     let mut write_buf = vec![0_u8; 1024];
 
-    write_response_with_buffer(request_method, response, writer, &mut write_buf)
+    write_response_with_buffer(
+        request_method,
+        request_version,
+        response,
+        writer,
+        &mut write_buf,
+    )
 }
 
 pub(crate) fn write_response_with_buffer(
     request_method: http::Method,
-    response: Response,
+    request_version: http::Version,
+    mut response: Response,
     writer: &mut dyn io::Write,
     write_buf: &mut Vec<u8>,
 ) -> Result<(), Error> {
     let method: hoot::Method = request_method.into();
-    let variant = ResponseVariant::unchecked_from_method(method);
+    let version: hoot::HttpVersion = request_version.into();
+    let variant = ResponseVariant::unchecked_from_method(method, version);
+    *response.version_mut() = request_version.clone();
 
     match variant {
         ResponseVariant::Get(v) => write_with_body(method, response, writer, write_buf, v),
@@ -93,12 +103,7 @@ fn write_with_body<M: MethodWithResponseBody>(
                     break;
                 }
 
-                let out = hoot_res.write_bytes(&tmp[..n])?.flush();
-
-                writer.write_all(&out)?;
-
-                let token = out.ready();
-                hoot_res = HootResponse::resume(token, output);
+                hoot_res = hoot_res.write_bytes(&tmp[..n])?.write_to(writer)?;
             }
 
             hoot_res.finish()?;
@@ -112,12 +117,7 @@ fn write_with_body<M: MethodWithResponseBody>(
                     break;
                 }
 
-                let out = hoot_res.write_bytes(&tmp[..n])?.flush();
-
-                writer.write_all(&out)?;
-
-                let token = out.ready();
-                hoot_res = HootResponse::resume(token, output);
+                hoot_res = hoot_res.write_bytes(&tmp[..n])?.write_to(writer)?;
             }
 
             hoot_res.finish()?;

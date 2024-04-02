@@ -109,12 +109,12 @@ impl<S, P: Callable<S>> Service<S, P> {
         }
     }
 
-    #[allow(unused)]
-    pub fn drive(
+    fn drive(
         &self,
         state: S,
-        reader: impl io::Read + Send + 'static,
+        reader: impl io::Read + 'static,
         writer: &mut dyn io::Write,
+        single: bool,
     ) -> Result<(), Error>
     where
         S: Clone,
@@ -125,6 +125,7 @@ impl<S, P: Callable<S>> Service<S, P> {
 
         loop {
             let request_method = request.method().clone();
+            let request_version = request.version().clone();
 
             // This is a cheap clone using Rc. This is so we can retain the HootBody
             // for consecutive requests. After this line we have two instances of Rc
@@ -142,7 +143,17 @@ impl<S, P: Callable<S>> Service<S, P> {
             // Get the buffers back to reuse for next request.
             let (mut parse_buf, fill_buf) = hoot_body.into_buffers();
 
-            write_response_with_buffer(request_method, response, writer, &mut parse_buf)?;
+            write_response_with_buffer(
+                request_method,
+                request_version,
+                response,
+                writer,
+                &mut parse_buf,
+            )?;
+
+            if single {
+                return Ok(());
+            }
 
             let Some(next_request) = read_from_buffers(parse_buf, fill_buf)? else {
                 break;
@@ -167,10 +178,11 @@ impl<S, P: Callable<S>> Service<S, P> {
             let state = state.clone();
 
             thread::spawn(move || {
-                if let Err(e) = service.drive(state, reader, &mut writer) {
+                if let Err(e) = service.drive(state, reader, &mut writer, false) {
                     match e {
                         Error::Hoot(e) => error!("service error: {}", e),
                         Error::Io(e) => debug!("client disconnect: {}", e),
+                        Error::Utf8(e) => debug!("{:?}", e),
                     }
                 }
             });
@@ -188,7 +200,7 @@ impl<S, P: Callable<S>> Service<S, P> {
         let service = self.clone();
         let state = state.clone();
 
-        service.drive(state, reader, &mut writer)?;
+        service.drive(state, reader, &mut writer, true)?;
 
         Ok(writer)
     }
@@ -247,7 +259,7 @@ impl<'a, T, S, H: Handler<T, S>, P: Callable<S>> Callable<S> for MethodHandler<'
 }
 
 fn request_matcher(_request: &Request, _method: &Method, _path: &str) -> bool {
-    todo!()
+    true
 }
 
 impl<'a, T1, S, H1: Handler<T1, S>, P1: Callable<S>> MethodRouter<S>
@@ -358,5 +370,13 @@ mod test {
         let mut acceptor = TestAcceptor::new(http::Request::get("/").body(()).unwrap());
 
         let writer = service.execute(state, &mut acceptor).unwrap();
+
+        let response = writer.into_response().unwrap();
+
+        println!("{:?}", response);
+
+        let body = response.into_body().into_string(20).unwrap();
+
+        println!("{:?}", body);
     }
 }
