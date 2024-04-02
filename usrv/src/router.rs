@@ -154,7 +154,7 @@ impl<S, P: Callable<S>> Service<S, P> {
         Ok(())
     }
 
-    pub fn run<A>(&self, state: S, mut acceptor: A) -> io::Result<()>
+    pub fn run<A>(&self, state: S, mut acceptor: A) -> Result<(), Error>
     where
         S: Clone + Send + 'static,
         P: Send + 'static,
@@ -175,6 +175,22 @@ impl<S, P: Callable<S>> Service<S, P> {
                 }
             });
         }
+    }
+
+    pub fn execute<A>(&self, state: S, acceptor: &mut A) -> Result<A::Writer, Error>
+    where
+        S: Clone + 'static,
+        P: 'static,
+        A: Acceptor,
+    {
+        let (reader, mut writer, _breaker) = acceptor.accept()?;
+
+        let service = self.clone();
+        let state = state.clone();
+
+        service.drive(state, reader, &mut writer)?;
+
+        Ok(writer)
     }
 }
 
@@ -339,7 +355,7 @@ mod test {
 
         let state = AppState;
 
-        let acceptor = TestAcceptor::new("");
+        let acceptor = TestAcceptor::new(http::Request::get("/").body(()).unwrap());
 
         service.run(state, acceptor).unwrap();
     }

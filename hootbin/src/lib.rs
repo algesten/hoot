@@ -2,9 +2,10 @@
 //!
 //! This is work in progress!
 
+use hoot::types;
 use hoot::types::state::{SEND_HEADERS, SEND_STATUS};
+use hoot::BodyWriter;
 use hoot::{server::*, Header, Method};
-use hoot::{types, BodyWriter};
 use hooturl::Url;
 use std::collections::HashMap;
 use std::iter::repeat_with;

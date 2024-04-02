@@ -68,7 +68,7 @@ fn write_with_body<M: MethodWithResponseBody>(
     const CHUNK_OVERHEAD: usize = 10;
 
     let body_size = if let Some(size) = body.size() {
-        size
+        size as usize
     } else {
         DEFAULT_SIZE_STREAMING_BODIES
     };

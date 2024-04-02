@@ -58,10 +58,10 @@ impl Body {
         refcell.into_inner()
     }
 
-    pub(crate) fn size(&self) -> Option<usize> {
+    pub(crate) fn size(&self) -> Option<u64> {
         match &self.inner {
             Inner::Empty => Some(0),
-            Inner::Bytes(v) => Some(v.get_ref().len()),
+            Inner::Bytes(v) => Some(v.get_ref().len() as u64),
             Inner::Streaming(_) => None,
             Inner::HootBody(_) => None,
         }
