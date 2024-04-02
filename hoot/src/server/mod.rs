@@ -4,7 +4,7 @@
 //!
 //! ```
 //! use hoot::server::{Request, Response, ResponseVariant};
-//! use hoot::{Method, HttpVersion};
+//! use hoot::{Method, HttpVersion, BodyWriter};
 //!
 //! let mut buf = [0; 1024];
 //!
@@ -85,7 +85,7 @@
 //! let response = Response::resume(token, &mut buf);
 //!
 //! let output = response
-//!     .write_chunk(b"{\"hello\":\"world\"}")?
+//!     .write_bytes(b"{\"hello\":\"world\"}")?
 //!     .finish()?
 //!     .flush();
 //!

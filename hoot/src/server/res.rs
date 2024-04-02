@@ -9,7 +9,7 @@ use crate::types::body::*;
 use crate::types::method::*;
 use crate::types::state::*;
 use crate::util::LengthChecker;
-use crate::{types::*, ByteWriter};
+use crate::{types::*, BodyWriter};
 use crate::{CallState, HootError, HttpVersion};
 
 pub enum ResponseVariant {
@@ -222,7 +222,7 @@ impl<'a, M: MethodWithResponseBody> Response<'a, SEND_BODY, M, BODY_LENGTH> {
     }
 }
 
-impl<'a, M: MethodWithResponseBody> ByteWriter for Response<'a, SEND_BODY, M, BODY_LENGTH> {
+impl<'a, M: MethodWithResponseBody> BodyWriter for Response<'a, SEND_BODY, M, BODY_LENGTH> {
     fn write_bytes(mut self, bytes: &[u8]) -> Result<Self> {
         trace!("Write bytes len: {}", bytes.len());
 
@@ -260,7 +260,7 @@ impl<'a, M: MethodWithResponseBody> Response<'a, SEND_BODY, M, BODY_CHUNKED> {
     }
 }
 
-impl<'a, M: MethodWithResponseBody> ByteWriter for Response<'a, SEND_BODY, M, BODY_CHUNKED> {
+impl<'a, M: MethodWithResponseBody> BodyWriter for Response<'a, SEND_BODY, M, BODY_CHUNKED> {
     fn write_bytes(mut self, bytes: &[u8]) -> Result<Self> {
         trace!("Write chunk len: {}", bytes.len());
 

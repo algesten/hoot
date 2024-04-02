@@ -5,7 +5,7 @@ use hoot::server::Response as HootResponse;
 use hoot::server::{ResponseVariant, ResumeToken};
 use hoot::types::state::{SEND_HEADERS, SEND_STATUS};
 use hoot::types::{Method, MethodWithResponseBody, MethodWithoutResponseBody};
-use hoot::{ByteWriter, RecvBodyMode};
+use hoot::{BodyWriter, RecvBodyMode};
 
 use crate::{Error, Response};
 

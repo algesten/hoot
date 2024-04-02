@@ -43,7 +43,7 @@ pub use header::Header;
 mod body;
 pub use body::{BodyPart, RecvBodyMode};
 
-pub trait ByteWriter: Sized {
+pub trait BodyWriter: Sized {
     fn write_bytes(self, bytes: &[u8]) -> Result<Self>;
 }
 
