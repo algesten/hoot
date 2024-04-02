@@ -39,7 +39,7 @@ pub struct ResumeToken<S: State, V: Version, M: Method, B: BodyType> {
 
 pub struct Output<'a, S: State, V: Version, M: Method, B: BodyType> {
     token: ResumeToken<S, V, M, B>,
-    output: &'a [u8],
+    out: Out<'a>,
 }
 
 impl<'a> Request<'a, (), (), (), ()> {
@@ -89,7 +89,7 @@ impl<'a, S: State, V: Version, M: Method, B: BodyType> Request<'a, S, V, M, B> {
                 typ: self.typ,
                 state: self.state,
             },
-            output: self.out.into_inner(),
+            out: self.out,
         }
     }
 
@@ -106,6 +106,13 @@ impl<'a, S: State, V: Version, M: Method, B: BodyType> Request<'a, S, V, M, B> {
             out: Out::wrap(buf),
         }
     }
+
+    #[cfg(feature = "std")]
+    pub fn write_to(mut self, write: &mut impl std::io::Write) -> std::io::Result<Self> {
+        write.write_all(self.out.as_bytes())?;
+        self.out.reset_position();
+        Ok(self)
+    }
 }
 
 impl<'a, S: State, V: Version, M: Method, B: BodyType> Output<'a, S, V, M, B> {
@@ -113,8 +120,12 @@ impl<'a, S: State, V: Version, M: Method, B: BodyType> Output<'a, S, V, M, B> {
         self.token
     }
 
+    pub fn ready_and_buf(self) -> (ResumeToken<S, V, M, B>, &'a mut [u8]) {
+        (self.token, self.out.into_buf())
+    }
+
     pub fn as_bytes(&self) -> &[u8] {
-        &self.output
+        self.out.as_bytes()
     }
 }
 
@@ -122,7 +133,7 @@ impl<'a, S: State, V: Version, M: Method, B: BodyType> Deref for Output<'a, S, V
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
-        &self.output
+        self.as_bytes()
     }
 }
 

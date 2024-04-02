@@ -55,7 +55,7 @@ impl ResumeToken<(), (), ()> {
 
 pub struct Output<'a, S: State, M: Method, B: BodyType> {
     token: ResumeToken<S, M, B>,
-    output: &'a [u8],
+    out: Out<'a>,
 }
 
 impl<'a, S: State, M: Method, B: BodyType> Response<'a, S, M, B> {
@@ -92,7 +92,7 @@ impl<'a, S: State, M: Method, B: BodyType> Response<'a, S, M, B> {
                 typ: self.typ,
                 state: self.state,
             },
-            output: self.out.into_inner(),
+            out: self.out,
         }
     }
 
@@ -312,8 +312,12 @@ impl<'a, S: State, M: Method, B: BodyType> Output<'a, S, M, B> {
         self.token
     }
 
+    pub fn ready_and_buf(self) -> (ResumeToken<S, M, B>, &'a mut [u8]) {
+        (self.token, self.out.into_buf())
+    }
+
     pub fn as_bytes(&self) -> &[u8] {
-        &self.output
+        self.out.as_bytes()
     }
 }
 
@@ -321,7 +325,7 @@ impl<'a, S: State, M: Method, B: BodyType> Deref for Output<'a, S, M, B> {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
-        &self.output
+        self.as_bytes()
     }
 }
 
