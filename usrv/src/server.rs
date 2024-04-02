@@ -53,6 +53,7 @@ pub mod test {
 
     use hoot::types::state::{ENDED, RECV_RESPONSE, SEND_HEADERS};
     use hoot::types::version::HTTP_11;
+    use hoot::BodyWriter;
     use http::{HeaderName, HeaderValue, Method};
 
     use crate::{http, Body, Error, Request};
@@ -201,7 +202,7 @@ pub mod test {
                     if n == 0 {
                         break;
                     }
-                    hoot_req = hoot_req.write_chunk(&tmp[..n])?.write_to(write)?;
+                    hoot_req = hoot_req.write_bytes(&tmp[..n])?.write_to(write)?;
                 }
 
                 Ok(hoot_req.finish()?.write_to(write)?.flush())
