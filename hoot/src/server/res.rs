@@ -85,6 +85,10 @@ impl<'a, S: State, M: Method, B: BodyType> Response<'a, S, M, B> {
         Ok(self)
     }
 
+    pub fn capacity(&self) -> usize {
+        self.out.capacity()
+    }
+
     pub fn flush(self) -> Output<'a, S, M, B> {
         trace!("Flush");
         Output {

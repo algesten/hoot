@@ -82,6 +82,10 @@ impl<'a, S: State, V: Version, M: Method, B: BodyType> Request<'a, S, V, M, B> {
         Ok(self)
     }
 
+    pub fn capacity(&self) -> usize {
+        self.out.capacity()
+    }
+
     pub fn flush(self) -> Output<'a, S, V, M, B> {
         trace!("Flush");
         Output {
@@ -317,7 +321,7 @@ impl<'a, V: Version, M: MethodWithRequestBody> Request<'a, SEND_BODY, V, M, BODY
             .expect("SendByteCheck when SEND_BODY")
     }
 
-    pub fn write_bytes(&mut self, bytes: &[u8]) -> Result<()> {
+    pub fn write_bytes(mut self, bytes: &[u8]) -> Result<Self> {
         trace!("Write bytes len: {}", bytes.len());
 
         // This returns Err if we try to write more bytes than content-length.
@@ -328,7 +332,7 @@ impl<'a, V: Version, M: MethodWithRequestBody> Request<'a, SEND_BODY, V, M, BODY
         w.write_bytes(bytes)?;
         w.commit();
 
-        Ok(())
+        Ok(self)
     }
 
     pub fn finish(mut self) -> Result<Request<'a, ENDED, (), (), ()>> {

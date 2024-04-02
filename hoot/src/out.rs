@@ -12,6 +12,7 @@ impl<'a> Out<'a> {
         Out { buf, pos: 0 }
     }
 
+    #[cfg(feature = "std")]
     pub fn reset_position(&mut self) {
         self.pos = 0;
     }
@@ -44,6 +45,10 @@ impl<'a> Out<'a> {
 
     pub fn into_buf(self) -> &'a mut [u8] {
         self.buf
+    }
+
+    pub(crate) fn capacity(&self) -> usize {
+        self.buf.len() - self.pos
     }
 }
 
