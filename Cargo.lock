@@ -28,7 +28,7 @@ checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
 
 [[package]]
 name = "hoot"
-version = "0.1.4"
+version = "0.2.0"
 dependencies = [
  "http",
  "httparse",
@@ -38,7 +38,7 @@ dependencies = [
 
 [[package]]
 name = "hootbin"
-version = "0.1.5"
+version = "0.2.0"
 dependencies = [
  "fastrand",
  "hoot",
@@ -50,7 +50,7 @@ dependencies = [
 
 [[package]]
 name = "hooturl"
-version = "0.1.4"
+version = "0.2.0"
 
 [[package]]
 name = "http"
@@ -184,7 +184,7 @@ checksum = "3354b9ac3fae1ff6755cb6db53683adb661634f67557942dea4facebec0fee4b"
 
 [[package]]
 name = "usrv"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "hoot",
  "http",

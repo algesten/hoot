@@ -1,6 +1,6 @@
 [package]
 name = "hootbin"
-version = "0.1.5"
+version = "0.2.0"
 edition = "2021"
 authors = ["Martin Algesten <martin@algesten.se>"]
 description = "hoot based library to emulate httpbin"
@@ -13,8 +13,8 @@ rust-version = "1.61"
 
 [dependencies]
 fastrand = "2.0.1"
-hoot = { path = "../hoot", version = "0.1.4", features = ["std"] }
-hooturl = { path = "../hooturl", features = ["std"] }
+hoot = { path = "../hoot", version = "0.2", features = ["std"] }
+hooturl = { path = "../hooturl", version = "0.2", features = ["std"] }
 thiserror = "1.0.56"
 serde = { version = "1.0.193", features = ["derive"] }
 serde_json = { version = "1.0.111" }

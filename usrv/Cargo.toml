@@ -1,6 +1,6 @@
 [package]
 name = "usrv"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["Martin Algesten <martin@algesten.se>"]
 description = "no_std, allocation free http 1.1 server"
@@ -21,7 +21,7 @@ all = ["std"]
 std = []
 
 [dependencies]
-hoot = { path = "../hoot", version = "0.1.4", features = ["http_crate", "std"] }
+hoot = { path = "../hoot", version = "0.2", features = ["http_crate", "std"] }
 http = "1.1.0"
 log = "0.4.21"
 thiserror = "1.0.58"
