@@ -1,169 +1,138 @@
-use core::fmt;
-use core::ops::Deref;
-use core::str;
+use std::fmt;
+use std::io::Write;
+
+use http::Method;
 
 use crate::chunk::Dechunker;
-use crate::error::Result;
-use crate::util::compare_lowercase_ascii;
-use crate::{CallState, HootError, Method};
+use crate::util::{compare_lowercase_ascii, Writer};
+use crate::Error;
 
-pub(crate) fn do_read_body<'a, 'b>(
-    state: &mut CallState,
-    src: &'a [u8],
-    dst: &'b mut [u8],
-) -> Result<BodyPart<'b>> {
-    trace!("Read body");
-
-    // If we already read to completion, do not use any more input.
-    if state.did_read_to_end {
-        return Ok(BodyPart::empty());
-    }
-
-    // unwrap is ok because we can't be in state RECV_BODY without setting it.
-    let part = match state.recv_body_mode.unwrap() {
-        RecvBodyMode::LengthDelimited(_) => read_limit(state, src, dst, true),
-        RecvBodyMode::Chunked => read_chunked(state, src, dst),
-        RecvBodyMode::CloseDelimited => read_limit(state, src, dst, false),
-    }?;
-
-    if part.finished {
-        state.did_read_to_end = true;
-    }
-
-    Ok(part)
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) enum BodyMode {
+    #[default]
+    None,
+    Sized(u64),
+    Chunked,
 }
 
-fn read_limit<'a, 'b>(
-    state: &mut CallState,
-    src: &'a [u8],
-    dst: &'b mut [u8],
-    use_checker: bool,
-) -> Result<BodyPart<'b>> {
-    let mut input_used = src.len().min(dst.len());
+const DEFAULT_CHUNK_SIZE: usize = 10 * 1024;
 
-    let mut finished = false;
-    if use_checker {
-        // unwrap is ok, because use_checker can't be true if we haven't got
-        // a length checker set for the response.
-        let checker = state.recv_checker.as_mut().unwrap();
-
-        // the input we need to read to fulfil the length checker might be
-        // smaller than the input buffers
-        input_used = checker.left_to_read().min(input_used);
-
-        checker.append(input_used, HootError::RecvMoreThanContentLength)?;
-        finished = checker.complete();
-
-        trace!("Read body limited: {}", input_used);
-    } else {
-        trace!("Read body closed: {}", input_used);
+impl BodyMode {
+    pub fn has_body(&self) -> bool {
+        matches!(self, BodyMode::Sized(_) | BodyMode::Chunked)
     }
 
-    let data = &mut dst[..input_used];
-    data.copy_from_slice(&src[..input_used]);
-
-    Ok(BodyPart {
-        input_used,
-        data,
-        finished,
-    })
-}
-
-fn read_chunked<'a>(state: &mut CallState, src: &[u8], dst: &'a mut [u8]) -> Result<BodyPart<'a>> {
-    if state.dechunker.is_none() {
-        state.dechunker = Some(Dechunker::new());
-    }
-    let dechunker = state.dechunker.as_mut().unwrap();
-    let (input_used, produced_output) = dechunker.parse_input(src, dst)?;
-
-    let data = &mut dst[..produced_output];
-    let finished = dechunker.is_ended();
-
-    trace!("Read chunked: {}", input_used);
-
-    Ok(BodyPart {
-        input_used,
-        data,
-        finished,
-    })
-}
-
-pub struct BodyPart<'b> {
-    pub(crate) input_used: usize,
-    pub(crate) data: &'b [u8],
-    pub(crate) finished: bool,
-}
-
-impl BodyPart<'_> {
-    pub fn input_used(&self) -> usize {
-        self.input_used
+    pub fn is_chunked(&self) -> bool {
+        matches!(self, Self::Chunked)
     }
 
-    pub fn data(&self) -> &[u8] {
-        self.data
-    }
+    pub fn write(&mut self, input: &[u8], w: &mut Writer) -> usize {
+        match self {
+            BodyMode::None => unreachable!(),
+            BodyMode::Sized(left) => {
+                let left_usize = (*left).min(usize::MAX as u64) as usize;
+                let to_write = w.available().min(input.len()).min(left_usize);
 
-    pub fn is_finished(&self) -> bool {
-        self.finished
-    }
-}
+                let success = w.try_write(|w| w.write_all(&input[..to_write]));
+                assert!(success);
 
-impl BodyPart<'_> {
-    pub(crate) fn empty() -> Self {
-        BodyPart {
-            input_used: 0,
-            data: &[],
-            finished: false,
+                *left -= to_write as u64;
+
+                to_write
+            }
+            BodyMode::Chunked => {
+                let mut input_used = 0;
+
+                // The chunk size might be smaller than the entire input, in which case
+                // we continue to send chunks frome the same input.
+                while write_chunk(&input[input_used..], &mut input_used, w, DEFAULT_CHUNK_SIZE) {}
+
+                input_used
+            }
         }
     }
+
+    pub(crate) fn finish(&self, w: &mut Writer) -> bool {
+        if self.is_chunked() {
+            let success = w.try_write(|w| w.write_all(b"0\r\n\r\n"));
+            if !success {
+                return false;
+            }
+        }
+        true
+    }
 }
 
-impl Deref for BodyPart<'_> {
-    type Target = [u8];
+fn write_chunk(input: &[u8], input_used: &mut usize, w: &mut Writer, max_chunk: usize) -> bool {
+    // 5 is the smallest possible overhead
+    let available = w.available().saturating_sub(5);
 
-    fn deref(&self) -> &Self::Target {
-        &self.data
+    let to_write = input.len().min(max_chunk).min(available);
+
+    // we don't want to write 0 since that indicates end-of-body.
+    if to_write == 0 {
+        return false;
     }
+
+    let success = w.try_write(|w| {
+        // chunk length
+        write!(w, "{:0x?}\r\n", to_write)?;
+
+        // chunk
+        w.write_all(&input[..to_write])?;
+
+        // chunk end
+        write!(w, "\r\n")
+    });
+
+    if success {
+        *input_used += to_write;
+    }
+
+    // write another chunk?
+    success && input.len() > to_write
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum RecvBodyMode {
-    /// Delimited by content-length. 0 is also a valid value when we don't expect a body,
-    /// due to HEAD or status, but still want to leave the socket open.
+pub enum BodyReader {
+    /// No body is expected either due to the status or method.
+    NoBody,
+    /// Delimited by content-length.
+    /// The value is what's left to receive.
     LengthDelimited(u64),
     /// Chunked transfer encoding
-    Chunked,
+    Chunked(Dechunker),
     /// Expect remote to close at end of body.
     CloseDelimited,
 }
 
-impl RecvBodyMode {
-    pub fn for_request<'a>(
-        http10: bool,
-        method: Method,
-        header_lookup: &'a dyn Fn(&str) -> Option<&'a str>,
-    ) -> Result<Self> {
-        let has_no_body = !method.has_request_body();
+impl BodyReader {
+    // pub fn for_request<'a>(
+    //     http10: bool,
+    //     method: &Method,
+    //     header_lookup: &'a dyn Fn(&str) -> Option<&'a str>,
+    // ) -> Result<Self, Error> {
+    //     let has_no_body = !method.need_request_body();
 
-        if has_no_body {
-            return Ok(Self::LengthDelimited(0));
-        }
+    //     if has_no_body {
+    //         return Ok(Self::LengthDelimited(0));
+    //     }
 
-        let ret = match Self::header_defined(http10, header_lookup)? {
-            // Request bodies cannot be close delimited (even under http10).
-            Self::CloseDelimited => Self::LengthDelimited(0),
-            r @ _ => r,
-        };
+    //     let ret = match Self::header_defined(http10, header_lookup)? {
+    //         // Request bodies cannot be close delimited (even under http10).
+    //         Self::CloseDelimited => Self::LengthDelimited(0),
+    //         r @ _ => r,
+    //     };
 
-        Ok(ret)
-    }
+    //     Ok(ret)
+    // }
 
     pub fn for_response<'a>(
         http10: bool,
-        method: Method,
+        method: &Method,
         status_code: u16,
         header_lookup: &'a dyn Fn(&str) -> Option<&'a str>,
-    ) -> Result<Self> {
+    ) -> Result<Self, Error> {
         let is_success = status_code >= 200 && status_code <= 299;
         let is_informational = status_code >= 100 && status_code <= 199;
 
@@ -182,11 +151,7 @@ impl RecvBodyMode {
             matches!(status_code, 204 | 304);
 
         if has_no_body {
-            if http10 {
-                return Ok(Self::CloseDelimited);
-            } else {
-                return Ok(Self::LengthDelimited(0));
-            }
+            return Ok(Self::NoBody);
         }
 
         // https://datatracker.ietf.org/doc/html/rfc2616#section-4.3
@@ -197,15 +162,17 @@ impl RecvBodyMode {
     fn header_defined<'a>(
         http10: bool,
         header_lookup: &'a dyn Fn(&str) -> Option<&'a str>,
-    ) -> Result<Self> {
+    ) -> Result<Self, Error> {
         let mut content_length: Option<u64> = None;
         let mut chunked = false;
 
         // for head in headers {
         if let Some(value) = header_lookup("content-length") {
-            let v = value.parse::<u64>()?;
+            let v = value
+                .parse::<u64>()
+                .map_err(|_| Error::BadContentLengthHeader)?;
             if content_length.is_some() {
-                return Err(HootError::DuplicateContentLength);
+                return Err(Error::TooManyContentLengthHeaders);
             }
             content_length = Some(v);
         }
@@ -223,7 +190,7 @@ impl RecvBodyMode {
             // Messages MUST NOT include both a Content-Length header field and a
             // non-identity transfer-coding. If the message does include a non-
             // identity transfer-coding, the Content-Length MUST be ignored.
-            return Ok(Self::Chunked);
+            return Ok(Self::Chunked(Dechunker::new()));
         }
 
         if let Some(len) = content_length {
@@ -232,13 +199,72 @@ impl RecvBodyMode {
 
         Ok(Self::CloseDelimited)
     }
+
+    pub fn read(&mut self, src: &[u8], dst: &mut [u8]) -> Result<(usize, usize), Error> {
+        trace!("Read body");
+
+        // unwrap is ok because we can't be in state RECV_BODY without setting it.
+        let part = match self {
+            BodyReader::LengthDelimited(_) => self.read_limit(src, dst),
+            BodyReader::Chunked(_) => self.read_chunked(src, dst),
+            BodyReader::CloseDelimited => self.read_unlimit(src, dst),
+            BodyReader::NoBody => return Ok((0, 0)),
+        }?;
+
+        Ok(part)
+    }
+
+    fn read_limit(&mut self, src: &[u8], dst: &mut [u8]) -> Result<(usize, usize), Error> {
+        let Self::LengthDelimited(left) = self else {
+            unreachable!()
+        };
+        let left_usize = (*left).min(usize::MAX as u64) as usize;
+
+        let to_read = src.len().min(dst.len()).min(left_usize);
+
+        dst[..to_read].copy_from_slice(&src[..to_read]);
+
+        *left -= to_read as u64;
+
+        Ok((to_read, to_read))
+    }
+
+    fn read_chunked(&mut self, src: &[u8], dst: &mut [u8]) -> Result<(usize, usize), Error> {
+        let BodyReader::Chunked(dechunker) = self else {
+            unreachable!();
+        };
+
+        let (input_used, output_used) = dechunker.parse_input(src, dst)?;
+
+        trace!("Read chunked: {}", input_used);
+
+        Ok((input_used, output_used))
+    }
+
+    fn read_unlimit(&mut self, src: &[u8], dst: &mut [u8]) -> Result<(usize, usize), Error> {
+        let to_read = src.len().min(dst.len());
+
+        dst[..to_read].copy_from_slice(&src[..to_read]);
+
+        Ok((to_read, to_read))
+    }
+
+    pub fn is_ended(&self) -> bool {
+        match self {
+            BodyReader::NoBody => true,
+            BodyReader::LengthDelimited(v) => *v == 0,
+            BodyReader::Chunked(v) => v.is_ended(),
+            BodyReader::CloseDelimited => false,
+        }
+    }
 }
 
-impl fmt::Debug for RecvBodyMode {
+impl fmt::Debug for BodyReader {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::NoBody => write!(f, "NoBody"),
             Self::LengthDelimited(arg0) => f.debug_tuple("LengthDelimited").field(arg0).finish(),
-            Self::Chunked => write!(f, "Chunked"),
+            Self::Chunked(_) => write!(f, "Chunked"),
             Self::CloseDelimited => write!(f, "CloseDelimited"),
         }
     }
