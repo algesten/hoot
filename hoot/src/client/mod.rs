@@ -1,3 +1,5 @@
+//! HTTP/1.1 client
+
 mod call;
 pub use call::Call;
 

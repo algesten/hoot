@@ -1,7 +1,9 @@
 use http::{Method, Version};
 use thiserror::Error;
 
+/// Error type for hoot
 #[derive(Debug, Error, PartialEq, Eq)]
+#[allow(missing_docs)]
 pub enum Error {
     #[error("unsupported http version")]
     UnsupportedVersion,

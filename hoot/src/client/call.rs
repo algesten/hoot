@@ -21,10 +21,32 @@ pub struct Call<'a, B> {
 }
 
 impl<'a> Call<'a, ()> {
+    /// Creates a call for a [`Method`] that do not have a request body
+    ///
+    /// Methods like `HEAD` and `GET` do not use a request body. This creates
+    /// a [`Call`] instance that does not expect a user provided body.
+    ///
+    /// ```
+    /// # use hoot::client::Call;
+    /// # use hoot::http::Request;
+    /// let req = Request::head("http://foo.test/page").body(()).unwrap();
+    /// Call::without_body(&req).unwrap();
+    /// ```
     pub fn without_body(request: &'a Request<()>) -> Result<Call<'a, WithoutBody>, Error> {
         Call::new(request, BodyMode::None)
     }
 
+    /// Creates a call for a [`Method`] that requires a request body
+    ///
+    /// Methods like `POST` and `PUT` expects a request body. This must be
+    /// used even if the body is zero-sized (`content-length: 0`).
+    ///
+    /// ```
+    /// # use hoot::client::Call;
+    /// # use hoot::http::Request;
+    /// let req = Request::put("http://foo.test/path").body(()).unwrap();
+    /// Call::with_body(&req).unwrap();
+    /// ```
     pub fn with_body(request: &'a Request<()>) -> Result<Call<'a, WithBody>, Error> {
         Call::new(request, BodyMode::Chunked)
     }
@@ -158,18 +180,84 @@ impl<'a, B> Call<'a, B> {
 }
 
 impl<'a> Call<'a, WithoutBody> {
+    /// Write the request to the output buffer
+    ///
+    /// Returns how much of the output buffer that was used.
+    ///
+    /// ```
+    /// # use hoot::client::Call;
+    /// # use hoot::http::Request;
+    /// let req = Request::head("http://foo.test/page").body(()).unwrap();
+    /// let mut call = Call::without_body(&req).unwrap();
+    ///
+    /// let mut output = vec![0; 1024];
+    /// let n = call.write(&mut output).unwrap();
+    /// let s = std::str::from_utf8(&output[..n]).unwrap();
+    ///
+    /// assert_eq!(s, "HEAD /page HTTP/1.1\r\nhost: foo.test\r\n");
+    /// ```
     pub fn write(&mut self, output: &mut [u8]) -> Result<usize, Error> {
         let (_, output_used) = do_write(&self.holder, &mut self.call_state, &[], output, true)?;
 
         Ok(output_used)
     }
 
+    /// Checks if the request if finished
+    ///
+    /// Until [`Call::write`] is called enough times (or with a sufficiently large buffer), the
+    /// request is not finished.
+    pub fn request_finished(&self) -> bool {
+        self.call_state.request_finished
+    }
+
+    /// Proceed to receiving a response
+    ///
+    /// Once the request is finished writing, proceed to receiving a response. Will error
+    /// if [`Call::request_finished()`] returns `false`.
     pub fn into_receive<'b>(self) -> Result<Call<'b, RecvResponse>, Error> {
         self.do_into_receive()
     }
 }
 
 impl<'a> Call<'a, WithBody> {
+    /// Write a request, and consecutive body to the output buffer
+    ///
+    /// The first argument `input` is the body input buffer. If the request contained
+    /// a `content-length` header, this buffer must be smaller or same size as that
+    /// `content-length`.
+    ///
+    /// When doing `transfer-encoding: chunked` signal the end of the body by
+    /// providing the input `&[]`.
+    ///
+    /// Returns `(usize, usize)` where the first number is how many bytes of the `input` that
+    /// were consumed. The second number is how many bytes of the `output` that were used.
+    ///
+    /// ```
+    /// # use hoot::client::Call;
+    /// # use hoot::http::Request;
+    /// let req = Request::post("http://f.test/page")
+    ///     .header("transfer-encoding", "chunked")
+    ///     .body(())
+    ///     .unwrap();
+    /// let mut call = Call::with_body(&req).unwrap();
+    ///
+    /// let body = b"hallo";
+    ///
+    /// // Send body
+    /// let mut output = vec![0; 1024];
+    /// let (i, n1) = call.write(body, &mut output).unwrap();
+    /// assert_eq!(i, 5);
+    ///
+    /// // Indicate the body is finished by sending &[]
+    /// let (_, n2) = call.write(&[], &mut output[n1..]).unwrap();
+    /// let s = std::str::from_utf8(&output[..n1 + n2]).unwrap();
+    ///
+    /// assert_eq!(
+    ///     s,
+    ///     "POST /page HTTP/1.1\r\nhost: f.test\r\n\
+    ///     transfer-encoding: chunked\r\n5\r\nhallo\r\n0\r\n\r\n"
+    /// );
+    /// ```
     pub fn write(&mut self, input: &[u8], output: &mut [u8]) -> Result<(usize, usize), Error> {
         if !input.is_empty() {
             if self.call_state.request_finished {
@@ -193,10 +281,17 @@ impl<'a> Call<'a, WithBody> {
         do_write(&self.holder, &mut self.call_state, input, output, fin)
     }
 
+    /// Checks if the request if finished
+    ///
+    /// Until [`Call::write`] is called with enough input to fulfil the body.
     pub fn request_finished(&self) -> bool {
         self.call_state.request_finished
     }
 
+    /// Proceed to receiving a response
+    ///
+    /// Once the request is finished writing, proceed to receiving a response. Will error
+    /// if [`Call::request_finished()`] returns `false`.
     pub fn into_receive<'b>(self) -> Result<Call<'b, RecvResponse>, Error> {
         self.do_into_receive()
     }
@@ -315,6 +410,15 @@ where
 }
 
 impl<'b> Call<'b, RecvResponse> {
+    /// Try reading response headers
+    ///
+    /// A response is only possible once the `input` holds all the HTTP response
+    /// headers. Before that this returns `None`. When the response is succesfully read,
+    /// the return value `(usize, Response<()>)` contains how many bytes were consumed
+    /// of the `input`.
+    ///
+    /// Once the response headers are succesfully read, use [`Call::into_body()`] to proceed
+    /// reading the response body.
     pub fn try_response(&mut self, input: &[u8]) -> Result<Option<(usize, Response<()>)>, Error> {
         let mut headers = [httparse::EMPTY_HEADER; 50]; // ~1.5k
         let mut res = httparse::Response::new(&mut headers);
@@ -363,6 +467,11 @@ impl<'b> Call<'b, RecvResponse> {
         Ok(Some((input_used, response)))
     }
 
+    /// Continue reading the response body
+    ///
+    /// Errors if called before [`Call::try_response()`] has produced a [`Response`].
+    ///
+    /// Returns `None` if there is no body such as the response to a `HEAD` request.
     pub fn into_body(self) -> Result<Option<Call<'b, RecvBody>>, Error> {
         let Some(rbm) = &self.call_state.body_reader else {
             return Err(Error::IncompleteResponse);
@@ -389,6 +498,10 @@ impl<'b> Call<'b, RecvResponse> {
 }
 
 impl<'b> Call<'b, RecvBody> {
+    /// Read the input as a response body
+    ///
+    /// Returns `(usize, usize)` where the first number is how many bytes of the input was used
+    /// and the second number how many of the output.
     pub fn read(&mut self, input: &[u8], output: &mut [u8]) -> Result<(usize, usize), Error> {
         let rbm = self.call_state.body_reader.as_mut().unwrap();
 
@@ -399,22 +512,28 @@ impl<'b> Call<'b, RecvBody> {
         rbm.read(input, output)
     }
 
+    /// Tell if the response is over
     pub fn is_ended(&self) -> bool {
         let rbm = self.call_state.body_reader.as_ref().unwrap();
         rbm.is_ended()
     }
 
+    /// Tell if response body is closed delimited
+    ///
+    /// HTTP/1.0 does not have `content-length` to serialize many requests over the same
+    /// socket. Instead it uses socket close to determine the body is finished.
     pub fn is_close_delimited(&self) -> bool {
         let rbm = self.call_state.body_reader.as_ref().unwrap();
         matches!(rbm, BodyReader::CloseDelimited)
     }
 
-    pub fn into_trailer(self) -> Result<Option<Call<'b, Trailer>>, Error> {
-        todo!()
-    }
+    // /// Continue to reading trailer headers
+    // pub fn into_trailer(self) -> Result<Option<Call<'b, Trailer>>, Error> {
+    //     todo!()
+    // }
 }
 
-pub struct Trailer(());
+// pub struct Trailer(());
 
 impl<'a, B> fmt::Debug for Call<'a, B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

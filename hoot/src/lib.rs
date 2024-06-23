@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 #![warn(clippy::all)]
 #![allow(clippy::uninlined_format_args)]
+#![deny(missing_docs)]
 
 #[macro_use]
 extern crate log;
@@ -20,5 +21,4 @@ mod util;
 
 mod body;
 
-mod client;
-pub use client::Call;
+pub mod client;
