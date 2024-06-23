@@ -1,5 +1,6 @@
 use std::fmt;
 use std::io::Write;
+use std::marker::PhantomData;
 
 use http::{HeaderName, HeaderValue, Method, Request, Response, StatusCode, Version};
 use httparse::Status;
@@ -9,42 +10,35 @@ use crate::body::{BodyMode, BodyReader};
 use crate::util::Writer;
 use crate::Error;
 
-use super::{RecvBody, RecvResponse, SendEmpty, SendStream};
+use super::{RecvBody, RecvResponse, WithBody, WithoutBody};
 
 /// An HTTP/1.1 call
 #[repr(C)]
 pub struct Call<'a, B> {
-    holder: Holder<'a, B>,
+    holder: Holder<'a>,
     call_state: CallState,
+    _ph: PhantomData<B>,
 }
 
 impl<'a> Call<'a, ()> {
-    pub fn without_body(request: &'a Request<()>) -> Result<Call<'a, SendEmpty>, Error> {
-        // SAFETY: `Streaming` is `repr(transparent)` over `()` (zero sized), which means
-        // casting a reference to it is also safe. Call<X> is repr(C) to ensure it has a
-        // known layout.
-        let r2 = unsafe { std::mem::transmute(request) };
-        Call::new(r2, BodyMode::None)
+    pub fn without_body(request: &'a Request<()>) -> Result<Call<'a, WithoutBody>, Error> {
+        Call::new(request, BodyMode::None)
     }
 
-    pub fn with_streaming_body(request: &'a Request<()>) -> Result<Call<'a, SendStream>, Error> {
-        // SAFETY: `Streaming` is `repr(transparent)` over `()` (zero sized), which means
-        // casting a reference to it is also safe. Call<X> is repr(C) to ensure it has a
-        // known layout.
-        let r2 = unsafe { std::mem::transmute(request) };
-        Call::new(r2, BodyMode::Chunked)
+    pub fn with_body(request: &'a Request<()>) -> Result<Call<'a, WithBody>, Error> {
+        Call::new(request, BodyMode::Chunked)
     }
 }
 
 #[repr(C)]
-struct Holder<'a, B> {
+struct Holder<'a> {
     preheaders: [Option<(HeaderName, HeaderValue)>; 2],
-    request: Option<&'a Request<B>>,
+    request: Option<&'a Request<()>>,
     method: Method,
 }
 
-impl<'a, B> Holder<'a, B> {
-    fn expect_request(&self) -> &Request<B> {
+impl<'a> Holder<'a> {
+    fn expect_request(&self) -> &Request<()> {
         // If this happens, we ar calling expect_request() in a state where it isn't expected.
         self.request.expect("request present in current state")
     }
@@ -91,7 +85,10 @@ impl Phase {
 }
 
 impl<'a, B> Call<'a, B> {
-    pub(crate) fn new(request: &'a Request<B>, default_body_mode: BodyMode) -> Result<Self, Error> {
+    pub(crate) fn new(
+        request: &'a Request<()>,
+        default_body_mode: BodyMode,
+    ) -> Result<Self, Error> {
         let info = request.analyze(default_body_mode)?;
 
         const HEADER_IDX_HOST: usize = 0;
@@ -136,6 +133,7 @@ impl<'a, B> Call<'a, B> {
                 body_mode: info.body_mode,
                 ..Default::default()
             },
+            _ph: PhantomData,
         })
     }
 
@@ -154,11 +152,12 @@ impl<'a, B> Call<'a, B> {
                 phase: Phase::RecvResponse,
                 ..self.call_state
             },
+            _ph: PhantomData,
         })
     }
 }
 
-impl<'a> Call<'a, SendEmpty> {
+impl<'a> Call<'a, WithoutBody> {
     pub fn write(&mut self, output: &mut [u8]) -> Result<usize, Error> {
         let (_, output_used) = do_write(&self.holder, &mut self.call_state, &[], output, true)?;
 
@@ -170,7 +169,7 @@ impl<'a> Call<'a, SendEmpty> {
     }
 }
 
-impl<'a> Call<'a, SendStream> {
+impl<'a> Call<'a, WithBody> {
     pub fn write(&mut self, input: &[u8], output: &mut [u8]) -> Result<(usize, usize), Error> {
         if !input.is_empty() {
             if self.call_state.request_finished {
@@ -203,8 +202,8 @@ impl<'a> Call<'a, SendStream> {
     }
 }
 
-fn do_write<B>(
-    holder: &Holder<'_, B>,
+fn do_write(
+    holder: &Holder<'_>,
     state: &mut CallState,
     input: &[u8],
     output: &mut [u8],
@@ -236,8 +235,8 @@ fn do_write<B>(
     Ok((input_used, w.len()))
 }
 
-fn try_write_prelude<B>(
-    holder: &Holder<'_, B>,
+fn try_write_prelude(
+    holder: &Holder<'_>,
     state: &mut CallState,
     w: &mut Writer,
 ) -> Result<(), Error> {
@@ -258,11 +257,7 @@ fn try_write_prelude<B>(
     }
 }
 
-fn try_write_prelude_part<B>(
-    holder: &Holder<'_, B>,
-    state: &mut CallState,
-    w: &mut Writer,
-) -> bool {
+fn try_write_prelude_part(holder: &Holder<'_>, state: &mut CallState, w: &mut Writer) -> bool {
     match &mut state.phase {
         Phase::SendLine => {
             let success = do_write_send_line(holder.expect_request(), w);
@@ -390,6 +385,7 @@ impl<'b> Call<'b, RecvResponse> {
                 phase: Phase::RecvBody,
                 ..self.call_state
             },
+            _ph: PhantomData,
         }))
     }
 }

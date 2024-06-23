@@ -4,12 +4,12 @@ pub use call::Call;
 /// Type state for requests without bodies via [`Call::without_body()`]
 #[repr(transparent)]
 #[doc(hidden)]
-pub struct SendEmpty(());
+pub struct WithoutBody(());
 
 /// Type state for streaming bodies via [`Call::with_streaming_body()`]
 #[doc(hidden)]
 #[repr(transparent)]
-pub struct SendStream(());
+pub struct WithBody(());
 
 /// Type state for receiving the HTTP Response
 #[repr(transparent)]
@@ -36,7 +36,7 @@ mod test {
 
         is_send_sync(Call::without_body(&Request::new(())).unwrap());
 
-        is_send_sync(Call::with_streaming_body(&Request::post("/").body(()).unwrap()).unwrap());
+        is_send_sync(Call::with_body(&Request::post("/").body(()).unwrap()).unwrap());
     }
 
     #[test]
@@ -48,7 +48,7 @@ mod test {
     #[test]
     fn create_streaming() {
         let req = Request::builder().body(()).unwrap();
-        let _call = Call::with_streaming_body(&req);
+        let _call = Call::with_body(&req);
     }
 
     #[test]
@@ -66,7 +66,7 @@ mod test {
     #[test]
     fn head_with_body() {
         let req = Request::head("http://foo.test/page").body(()).unwrap();
-        let err = Call::with_streaming_body(&req).unwrap_err();
+        let err = Call::with_body(&req).unwrap_err();
 
         assert_eq!(err, Error::MethodForbidsBody(Method::HEAD));
     }
@@ -77,7 +77,7 @@ mod test {
             .header("content-length", 5)
             .body(())
             .unwrap();
-        let mut call = Call::with_streaming_body(&req).unwrap();
+        let mut call = Call::with_body(&req).unwrap();
 
         let mut output = vec![0; 1024];
         let (i, n) = call.write(b"hallo", &mut output).unwrap();
@@ -96,7 +96,7 @@ mod test {
             .header("content-length", 5)
             .body(())
             .unwrap();
-        let mut call = Call::with_streaming_body(&req).unwrap();
+        let mut call = Call::with_body(&req).unwrap();
 
         let mut output = vec![0; 1024];
 
@@ -141,7 +141,7 @@ mod test {
             .header("content-length", 2)
             .body(())
             .unwrap();
-        let mut call = Call::with_streaming_body(&req).unwrap();
+        let mut call = Call::with_body(&req).unwrap();
 
         let body = b"hallo";
 
@@ -157,7 +157,7 @@ mod test {
             .header("content-length", 5)
             .body(())
             .unwrap();
-        let mut call = Call::with_streaming_body(&req).unwrap();
+        let mut call = Call::with_body(&req).unwrap();
 
         let mut output = vec![0; 1024];
         let (i, n1) = call.write(b"ha", &mut output).unwrap();
@@ -186,7 +186,7 @@ mod test {
             .header("transfer-encoding", "chunked")
             .body(())
             .unwrap();
-        let mut call = Call::with_streaming_body(&req).unwrap();
+        let mut call = Call::with_body(&req).unwrap();
 
         let body = b"hallo";
 
@@ -213,7 +213,7 @@ mod test {
     #[test]
     fn post_streaming() {
         let req = Request::post("http://f.test/page").body(()).unwrap();
-        let mut call = Call::with_streaming_body(&req).unwrap();
+        let mut call = Call::with_body(&req).unwrap();
 
         let mut output = vec![0; 1024];
         let (in1, out1) = call.write(b"hallo", &mut output).unwrap();
@@ -239,7 +239,7 @@ mod test {
             .header("content-length", "5")
             .body(())
             .unwrap();
-        let mut call = Call::with_streaming_body(&req).unwrap();
+        let mut call = Call::with_body(&req).unwrap();
 
         let mut output = vec![0; 1024];
         let (in1, out1) = call.write(b"hallo", &mut output).unwrap();
@@ -257,7 +257,7 @@ mod test {
     #[test]
     fn post_streaming_after_end() {
         let req = Request::post("http://f.test/page").body(()).unwrap();
-        let mut call = Call::with_streaming_body(&req).unwrap();
+        let mut call = Call::with_body(&req).unwrap();
 
         let mut output = vec![0; 1024];
         let (_, out1) = call.write(b"hallo", &mut output).unwrap();
@@ -276,7 +276,7 @@ mod test {
             .header("content-length", "5")
             .body(())
             .unwrap();
-        let mut call = Call::with_streaming_body(&req).unwrap();
+        let mut call = Call::with_body(&req).unwrap();
 
         let mut output = vec![0; 1024];
         let (_, n) = call.write(b"hallo", &mut output).unwrap();
