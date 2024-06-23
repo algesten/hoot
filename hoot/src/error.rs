@@ -40,7 +40,7 @@ pub enum Error {
     ChunkExpectedCrLf,
 
     #[error("attempt to stream body after sending finish (&[])")]
-    StreamingContentAfterFinish,
+    BodyContentAfterFinish,
 
     #[error("attempt to write larger body than content-length")]
     BodyLargerThanContentLength,

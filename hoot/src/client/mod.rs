@@ -6,12 +6,6 @@ pub use call::Call;
 #[doc(hidden)]
 pub struct SendEmpty(());
 
-/// Trait for types used to send owned bodies via [`Call::with_static_body()`]
-#[doc(hidden)]
-pub trait SendBody: AsRef<[u8]> {}
-
-impl<T: AsRef<[u8]>> SendBody for T {}
-
 /// Type state for streaming bodies via [`Call::with_streaming_body()`]
 #[doc(hidden)]
 #[repr(transparent)]
@@ -42,44 +36,13 @@ mod test {
 
         is_send_sync(Call::without_body(&Request::new(())).unwrap());
 
-        is_send_sync(Call::with_static_body(&Request::post("/").body(b"ha").unwrap()).unwrap());
-
         is_send_sync(Call::with_streaming_body(&Request::post("/").body(()).unwrap()).unwrap());
-    }
-
-    #[test]
-    fn various_bodies() {
-        let _ = Call::with_static_body(&Request::new(&[]));
-        let _ = Call::with_static_body(&Request::new(&vec![]));
-        let _ = Call::with_static_body(&Request::new(&[0, 1, 2]));
-        let _ = Call::with_static_body(&Request::new(&"foo"));
-        let _ = Call::with_static_body(&Request::new(b"foo"));
-        let _ = Call::with_static_body(&Request::new(&"foo".to_string()));
-        let _ = Call::with_static_body(&Request::new(vec![]));
-        let _ = Call::with_static_body(&Request::new([0, 1, 2]));
-        let _ = Call::with_static_body(&Request::new("foo"));
-        let _ = Call::with_static_body(&Request::new("foo".to_string()));
     }
 
     #[test]
     fn create_empty() {
         let req = Request::builder().body(()).unwrap();
         let _call = Call::without_body(&req);
-    }
-
-    #[test]
-    fn create_body() {
-        let s = "hello";
-        let req = Request::builder().body(&s).unwrap();
-        let _call = Call::with_static_body(&req);
-
-        let v = vec![0_u8, 1, 2];
-        let req = Request::builder().body(&v).unwrap();
-        let _call = Call::with_static_body(&req);
-
-        let v: &[u8] = &[1_u8, 2, 3];
-        let req = Request::builder().body(&v).unwrap();
-        let _call = Call::with_static_body(&req);
     }
 
     #[test]
@@ -102,19 +65,23 @@ mod test {
 
     #[test]
     fn head_with_body() {
-        let req = Request::head("http://foo.test/page").body(&[]).unwrap();
-        let err = Call::with_static_body(&req).unwrap_err();
+        let req = Request::head("http://foo.test/page").body(()).unwrap();
+        let err = Call::with_streaming_body(&req).unwrap_err();
 
         assert_eq!(err, Error::MethodForbidsBody(Method::HEAD));
     }
 
     #[test]
     fn post() {
-        let req = Request::post("http://f.test/page").body(b"hallo").unwrap();
-        let mut call = Call::with_static_body(&req).unwrap();
+        let req = Request::post("http://f.test/page")
+            .header("content-length", 5)
+            .body(())
+            .unwrap();
+        let mut call = Call::with_streaming_body(&req).unwrap();
 
         let mut output = vec![0; 1024];
-        let n = call.write(&mut output).unwrap();
+        let (i, n) = call.write(b"hallo", &mut output).unwrap();
+        assert_eq!(i, 5);
         let s = str::from_utf8(&output[..n]).unwrap();
 
         assert_eq!(
@@ -125,33 +92,46 @@ mod test {
 
     #[test]
     fn post_small_output() {
-        let req = Request::post("http://f.test/page").body(b"hallo").unwrap();
-        let mut call = Call::with_static_body(&req).unwrap();
+        let req = Request::post("http://f.test/page")
+            .header("content-length", 5)
+            .body(())
+            .unwrap();
+        let mut call = Call::with_streaming_body(&req).unwrap();
 
         let mut output = vec![0; 1024];
 
+        let body = b"hallo";
+
         {
-            let n = call.write(&mut output[..25]).unwrap();
+            let (i, n) = call.write(body, &mut output[..25]).unwrap();
+            assert_eq!(i, 0);
             let s = str::from_utf8(&output[..n]).unwrap();
             assert_eq!(s, "POST /page HTTP/1.1\r\n");
+            assert!(!call.request_finished());
         }
 
         {
-            let n = call.write(&mut output[..20]).unwrap();
+            let (i, n) = call.write(body, &mut output[..20]).unwrap();
+            assert_eq!(i, 0);
             let s = str::from_utf8(&output[..n]).unwrap();
             assert_eq!(s, "host: f.test\r\n");
+            assert!(!call.request_finished());
         }
 
         {
-            let n = call.write(&mut output[..19]).unwrap();
+            let (i, n) = call.write(body, &mut output[..19]).unwrap();
+            assert_eq!(i, 0);
             let s = str::from_utf8(&output[..n]).unwrap();
             assert_eq!(s, "content-length: 5\r\n");
+            assert!(!call.request_finished());
         }
 
         {
-            let n = call.write(&mut output[..25]).unwrap();
+            let (i, n) = call.write(body, &mut output[..25]).unwrap();
+            assert_eq!(i, 5);
             let s = str::from_utf8(&output[..n]).unwrap();
             assert_eq!(s, "hallo");
+            assert!(call.request_finished());
         }
     }
 
@@ -159,31 +139,62 @@ mod test {
     fn post_with_short_content_length() {
         let req = Request::post("http://f.test/page")
             .header("content-length", 2)
-            .body(b"hallo")
+            .body(())
             .unwrap();
-        let mut call = Call::with_static_body(&req).unwrap();
+        let mut call = Call::with_streaming_body(&req).unwrap();
+
+        let body = b"hallo";
 
         let mut output = vec![0; 1024];
-        let n = call.write(&mut output).unwrap();
-        let s = str::from_utf8(&output[..n]).unwrap();
+        let r = call.write(body, &mut output);
+
+        assert_eq!(r.unwrap_err(), Error::BodyLargerThanContentLength);
+    }
+
+    #[test]
+    fn post_with_short_body_input() {
+        let req = Request::post("http://f.test/page")
+            .header("content-length", 5)
+            .body(())
+            .unwrap();
+        let mut call = Call::with_streaming_body(&req).unwrap();
+
+        let mut output = vec![0; 1024];
+        let (i, n1) = call.write(b"ha", &mut output).unwrap();
+        assert_eq!(i, 2);
+        let s = str::from_utf8(&output[..n1]).unwrap();
 
         assert_eq!(
             s,
-            "POST /page HTTP/1.1\r\nhost: f.test\r\ncontent-length: 2\r\nha"
+            "POST /page HTTP/1.1\r\nhost: f.test\r\ncontent-length: 5\r\nha"
         );
+
+        assert!(!call.request_finished());
+
+        let (i, n2) = call.write(b"llo", &mut output).unwrap();
+        assert_eq!(i, 3);
+        let s = str::from_utf8(&output[..n2]).unwrap();
+
+        assert_eq!(s, "llo");
+
+        assert!(call.request_finished());
     }
 
     #[test]
     fn post_with_chunked() {
         let req = Request::post("http://f.test/page")
             .header("transfer-encoding", "chunked")
-            .body(b"hallo")
+            .body(())
             .unwrap();
-        let mut call = Call::with_static_body(&req).unwrap();
+        let mut call = Call::with_streaming_body(&req).unwrap();
+
+        let body = b"hallo";
 
         let mut output = vec![0; 1024];
-        let n = call.write(&mut output).unwrap();
-        let s = str::from_utf8(&output[..n]).unwrap();
+        let (i, n1) = call.write(body, &mut output).unwrap();
+        assert_eq!(i, 5);
+        let (_, n2) = call.write(&[], &mut output[n1..]).unwrap();
+        let s = str::from_utf8(&output[..n1 + n2]).unwrap();
 
         assert_eq!(
             s,
@@ -256,7 +267,7 @@ mod test {
 
         let err = call.write(b"after end", &mut output[(out1 + out2)..]);
 
-        assert_eq!(err, Err(Error::StreamingContentAfterFinish));
+        assert_eq!(err, Err(Error::BodyContentAfterFinish));
     }
 
     #[test]
@@ -273,6 +284,6 @@ mod test {
         // this is more than content-length
         let err = call.write(b"fail", &mut output[n..]).unwrap_err();
 
-        assert_eq!(err, Error::BodyLargerThanContentLength);
+        assert_eq!(err, Error::BodyContentAfterFinish);
     }
 }

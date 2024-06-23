@@ -9,7 +9,7 @@ use crate::body::{BodyMode, BodyReader};
 use crate::util::Writer;
 use crate::Error;
 
-use super::{RecvBody, RecvResponse, SendBody, SendEmpty, SendStream};
+use super::{RecvBody, RecvResponse, SendEmpty, SendStream};
 
 /// An HTTP/1.1 call
 #[repr(C)]
@@ -25,11 +25,6 @@ impl<'a> Call<'a, ()> {
         // known layout.
         let r2 = unsafe { std::mem::transmute(request) };
         Call::new(r2, BodyMode::None)
-    }
-
-    pub fn with_static_body<B: SendBody>(request: &'a Request<B>) -> Result<Call<'a, B>, Error> {
-        let body_len = request.body().as_ref().len() as u64;
-        Call::new(request, BodyMode::Sized(body_len))
     }
 
     pub fn with_streaming_body(request: &'a Request<()>) -> Result<Call<'a, SendStream>, Error> {
@@ -175,26 +170,11 @@ impl<'a> Call<'a, SendEmpty> {
     }
 }
 
-impl<'a, B: SendBody> Call<'a, B> {
-    pub fn write(&mut self, output: &mut [u8]) -> Result<usize, Error> {
-        let request = self.holder.expect_request();
-        let input = &request.body().as_ref()[self.call_state.body_pos..];
-
-        let (_, output_used) = do_write(&self.holder, &mut self.call_state, input, output, true)?;
-
-        Ok(output_used)
-    }
-
-    pub fn into_receive<'b>(self) -> Result<Call<'b, RecvResponse>, Error> {
-        self.do_into_receive()
-    }
-}
-
 impl<'a> Call<'a, SendStream> {
     pub fn write(&mut self, input: &[u8], output: &mut [u8]) -> Result<(usize, usize), Error> {
         if !input.is_empty() {
             if self.call_state.request_finished {
-                return Err(Error::StreamingContentAfterFinish);
+                return Err(Error::BodyContentAfterFinish);
             }
 
             if let BodyMode::Sized(left) = self.call_state.body_mode {
@@ -204,12 +184,18 @@ impl<'a> Call<'a, SendStream> {
             }
         }
 
-        if self.call_state.request_finished && !input.is_empty() {}
-
         // Sending &[] finishes.
-        let fin = input.is_empty();
+        let fin = match self.call_state.body_mode {
+            BodyMode::None => true,
+            BodyMode::Sized(left) => input.len() as u64 == left,
+            BodyMode::Chunked => input.is_empty(),
+        };
 
         do_write(&self.holder, &mut self.call_state, input, output, fin)
+    }
+
+    pub fn request_finished(&self) -> bool {
+        self.call_state.request_finished
     }
 
     pub fn into_receive<'b>(self) -> Result<Call<'b, RecvResponse>, Error> {
