@@ -226,10 +226,8 @@ fn do_write(
 
     let entire_input_used = input_used == input.len();
 
-    if entire_input_used && may_finish {
-        if state.body_mode.finish(&mut w) {
-            state.request_finished = true;
-        }
+    if entire_input_used && may_finish && state.body_mode.finish(&mut w) {
+        state.request_finished = true;
     }
 
     Ok((input_used, w.len()))

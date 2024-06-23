@@ -90,7 +90,7 @@ impl Dechunker {
         // Read the smallest amount of input/output or length left of chunk.
         let to_read = src.len().min(dst.len()).min(*left);
 
-        (&mut dst[..to_read]).copy_from_slice(&src[..to_read]);
+        dst[..to_read].copy_from_slice(&src[..to_read]);
         pos.index_in += to_read;
         pos.index_out += to_read;
         *left -= to_read;

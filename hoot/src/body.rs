@@ -133,8 +133,8 @@ impl BodyReader {
         status_code: u16,
         header_lookup: &'a dyn Fn(&str) -> Option<&'a str>,
     ) -> Result<Self, Error> {
-        let is_success = status_code >= 200 && status_code <= 299;
-        let is_informational = status_code >= 100 && status_code <= 199;
+        let is_success = (200..=299).contains(&status_code);
+        let is_informational = (100..=199).contains(&status_code);
 
         let has_no_body =
             // https://datatracker.ietf.org/doc/html/rfc2616#section-4.3
@@ -180,7 +180,7 @@ impl BodyReader {
         if let Some(value) = header_lookup("transfer-encoding") {
             // Header can repeat, stop looking if we found "chunked"
             chunked = value
-                .split(",")
+                .split(',')
                 .map(|v| v.trim())
                 .any(|v| compare_lowercase_ascii(v, "chunked"));
         }
