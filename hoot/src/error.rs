@@ -1,170 +1,73 @@
-use core::fmt;
-use core::num::ParseIntError;
-use core::str::Utf8Error;
+use http::{Method, Version};
+use thiserror::Error;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum HootError {
-    /// The borrowed buffer did not have enough space to hold the
-    /// data we attempted to write.
-    ///
-    /// Call `.flush()`, write the output to the transport followed by `Call::resume()`.
+/// Error type for hoot
+#[derive(Debug, Error, PartialEq, Eq)]
+#[allow(missing_docs)]
+pub enum Error {
+    #[error("unsupported http version")]
+    UnsupportedVersion,
+
+    #[error("{0} not valid for HTTP version {1:?}")]
+    MethodVersionMismatch(Method, Version),
+
+    #[error("more than one host header")]
+    TooManyHostHeaders,
+
+    #[error("more than one content-length header")]
+    TooManyContentLengthHeaders,
+
+    #[error("host header is not a string")]
+    BadHostHeader,
+
+    #[error("content-length header not a number")]
+    BadContentLengthHeader,
+
+    #[error("method forbids body: {0}")]
+    MethodForbidsBody(Method),
+
+    #[error("method requires body: {0}")]
+    MethodRequiresBody(Method),
+
+    #[error("output too small to write output")]
     OutputOverflow,
 
-    /// Invalid byte in header name.
-    HeaderName,
+    #[error("chunk length is not ascii")]
+    ChunkLenNotAscii,
 
-    /// Invalid byte in header value.
-    HeaderValue,
+    #[error("chunk length cannot be read as a number")]
+    ChunkLenNotANumber,
 
-    /// Invalid Response status.
-    Status,
+    #[error("chunk expected crlf as next character")]
+    ChunkExpectedCrLf,
 
-    /// Invalid byte in new line.
-    NewLine,
+    #[error("attempt to stream body after sending finish (&[])")]
+    BodyContentAfterFinish,
 
-    /// Parsed more headers than provided buffer can contain.
-    TooManyHeaders,
+    #[error("attempt to write larger body than content-length")]
+    BodyLargerThanContentLength,
 
-    /// Encountered a forbidden header name.
-    ///
-    /// `content-length` and `transfer-encoding` must be set using
-    /// `with_body()` and `with_body_chunked()`.
-    ForbiddenBodyHeader,
+    #[error("request is not finished")]
+    UnfinishedRequest,
 
-    /// Header is not allowed for HTTP/1.1
-    ForbiddenHttp11Header,
+    #[error("http parse fail: {0}")]
+    HttpParseFail(String),
 
-    /// The trailer name is not allowed.
-    ForbiddenTrailer,
+    #[error("http response missing version")]
+    MissingResponseVersion,
 
-    /// Attempt to send more content than declared in the `Content-Length` header.
-    SentMoreThanContentLength,
+    #[error("http response missing status")]
+    ResponseMissingStatus,
 
-    /// Attempt to send less content than declared in the `Content-Length` header.
-    SentLessThanContentLength,
+    #[error("http response invalid status")]
+    ResponseInvalidStatus,
 
-    /// Attempt to send more content than declared in the `Content-Length` header.
-    RecvMoreThanContentLength,
-
-    /// Attempt to send less content than declared in the `Content-Length` header.
-    RecvLessThanContentLength,
-
-    /// Failed to read bytes as &str
-    ConvertBytesToStr,
-
-    /// The requested HTTP version does not match the response HTTP version.
-    HttpVersionMismatch,
-
-    /// If we attempt to call `.complete()` on an AttemptStatus that didn't get full input to succeed.
-    StatusIsNotComplete,
-
-    /// Failed to parse an integer. This can happen if a Content-Length header contains bogus.
-    ParseIntError,
-
-    /// More than one Content-Length header in response.
-    DuplicateContentLength,
-
-    /// Incoming chunked encoding is incorrect.
-    IncorrectChunk,
-
-    /// Invalid byte where token is required.
-    Token,
-
-    /// Invalid byte in HTTP version.
-    Version,
-
-    /// Did not read body to finish.
-    BodyNotFinished,
-
-    /// Request method is unknown.
-    UnknownMethod,
-
-    /// Failed to get a `TryInto<u64>`.
-    NotU64,
-
-    /// A TryFrom conversion of a [`server::RequestAttempt`] that was not complete.
-    #[cfg(feature = "http_crate")]
-    IncompleteRequestAttempt,
-
-    /// A TryFrom conversion of a [`client::ResponseAttempt`] that was not complete.
-    #[cfg(feature = "http_crate")]
-    IncompleteResponseAttempt,
-
-    /// A response status code failed to convert to the http crate `StatusCode`.
-    #[cfg(feature = "http_crate")]
-    HttpRefusedStatusCode,
+    #[error("must read http response before body")]
+    IncompleteResponse,
 }
 
-pub(crate) static OVERFLOW: Result<()> = Err(HootError::OutputOverflow);
-
-pub type Result<T> = core::result::Result<T, HootError>;
-
-impl From<Utf8Error> for HootError {
-    fn from(_: Utf8Error) -> Self {
-        HootError::ConvertBytesToStr
-    }
-}
-
-impl From<ParseIntError> for HootError {
-    fn from(_: ParseIntError) -> Self {
-        HootError::ParseIntError
-    }
-}
-
-impl From<httparse::Error> for HootError {
+impl From<httparse::Error> for Error {
     fn from(value: httparse::Error) -> Self {
-        match value {
-            httparse::Error::HeaderName => HootError::HeaderName,
-            httparse::Error::HeaderValue => HootError::HeaderValue,
-            httparse::Error::NewLine => HootError::NewLine,
-            httparse::Error::Status => HootError::Status,
-            httparse::Error::Token => HootError::Token,
-            httparse::Error::TooManyHeaders => HootError::TooManyHeaders,
-            httparse::Error::Version => HootError::Version,
-        }
+        Error::HttpParseFail(value.to_string())
     }
 }
-
-impl fmt::Display for HootError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use HootError::*;
-        let s = match self {
-            OutputOverflow => "output buffer overflow",
-            HeaderName => "invalid header name",
-            HeaderValue => "invalid header value",
-            NewLine => "invalid new line",
-            Status => "invalid response status",
-            Token => "invalid token",
-            TooManyHeaders => "too many headers",
-            Version => "invalid HTTP version",
-            ForbiddenBodyHeader => "forbidden header name",
-            ForbiddenHttp11Header => "forbidden header for http1.1",
-            ForbiddenTrailer => "forbidden trailer",
-            SentMoreThanContentLength => "sent more than content-length",
-            SentLessThanContentLength => "sent less than content-length",
-            RecvMoreThanContentLength => "received more than content-length",
-            RecvLessThanContentLength => "received less than content-length",
-            ConvertBytesToStr => "failed to convert &[u8] to &str",
-            HttpVersionMismatch => "http version mismatch",
-            StatusIsNotComplete => "called complete() before entire status read",
-            ParseIntError => "failed to parse integer",
-            DuplicateContentLength => "multiple content-length headers",
-            IncorrectChunk => "incorrect incoming body chunk",
-            BodyNotFinished => "called finish() before body was finished",
-            UnknownMethod => "unknown incoming method",
-            NotU64 => "not possible to convert to u64",
-            #[cfg(feature = "http_crate")]
-            IncompleteRequestAttempt => "not a complete request",
-            #[cfg(feature = "http_crate")]
-            IncompleteResponseAttempt => "not a complete response",
-            #[cfg(feature = "http_crate")]
-            HttpRefusedStatusCode => "response status code not possible for http crate",
-        };
-
-        write!(f, "{}", s)
-    }
-}
-
-#[cfg(feature = "std")]
-impl std::error::Error for HootError {}

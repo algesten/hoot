@@ -4,7 +4,4 @@ resolver = "2"
 members = [
         #
         "hoot",
-        "hootbin",
-        "hooturl",
-        "usrv",
 ]

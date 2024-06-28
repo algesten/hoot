@@ -1,8 +1,7 @@
 use core::str;
 
-use crate::error::Result;
-use crate::parser::find_crlf;
-use crate::HootError;
+use crate::util::find_crlf;
+use crate::Error;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Dechunker {
@@ -22,7 +21,7 @@ impl Dechunker {
         Dechunker::Size
     }
 
-    pub fn parse_input(&mut self, src: &[u8], dst: &mut [u8]) -> Result<(usize, usize)> {
+    pub fn parse_input(&mut self, src: &[u8], dst: &mut [u8]) -> Result<(usize, usize), Error> {
         let mut pos = Pos {
             index_in: 0,
             index_out: 0,
@@ -32,7 +31,7 @@ impl Dechunker {
             let more = match self {
                 Dechunker::Size => self.read_size(src, &mut pos)?,
                 Dechunker::Chunk(_) => self.read_data(src, dst, &mut pos)?,
-                Dechunker::CrLf => self.read_crlf(src, &mut pos)?,
+                Dechunker::CrLf => self.expect_crlf(src, &mut pos)?,
                 Dechunker::Ended => false,
             };
 
@@ -57,7 +56,7 @@ impl Dechunker {
         matches!(self, Self::Ended)
     }
 
-    fn read_size(&mut self, src: &[u8], pos: &mut Pos) -> Result<bool> {
+    fn read_size(&mut self, src: &[u8], pos: &mut Pos) -> Result<bool, Error> {
         let src = &src[pos.index_in..];
 
         let i = match find_crlf(src) {
@@ -66,8 +65,8 @@ impl Dechunker {
         };
 
         let len_end = src.iter().position(|c| *c == b';').unwrap_or(i);
-        let len_str = str::from_utf8(&src[..len_end])?;
-        let len = usize::from_str_radix(len_str, 16)?;
+        let len_str = str::from_utf8(&src[..len_end]).map_err(|_| Error::ChunkLenNotAscii)?;
+        let len = usize::from_str_radix(len_str, 16).map_err(|_| Error::ChunkLenNotANumber)?;
 
         pos.index_in += i + 2;
         *self = if len == 0 {
@@ -79,7 +78,7 @@ impl Dechunker {
         Ok(true)
     }
 
-    fn read_data(&mut self, src: &[u8], dst: &mut [u8], pos: &mut Pos) -> Result<bool> {
+    fn read_data(&mut self, src: &[u8], dst: &mut [u8], pos: &mut Pos) -> Result<bool, Error> {
         let src = &src[pos.index_in..];
         let dst = &mut dst[pos.index_out..];
 
@@ -91,7 +90,7 @@ impl Dechunker {
         // Read the smallest amount of input/output or length left of chunk.
         let to_read = src.len().min(dst.len()).min(*left);
 
-        (&mut dst[..to_read]).copy_from_slice(&src[..to_read]);
+        dst[..to_read].copy_from_slice(&src[..to_read]);
         pos.index_in += to_read;
         pos.index_out += to_read;
         *left -= to_read;
@@ -103,7 +102,7 @@ impl Dechunker {
         Ok(to_read > 0)
     }
 
-    fn read_crlf(&mut self, src: &[u8], pos: &mut Pos) -> Result<bool> {
+    fn expect_crlf(&mut self, src: &[u8], pos: &mut Pos) -> Result<bool, Error> {
         let src = &src[pos.index_in..];
 
         let i = match find_crlf(src) {
@@ -112,7 +111,7 @@ impl Dechunker {
         };
 
         if i > 0 {
-            return Err(HootError::IncorrectChunk);
+            return Err(Error::ChunkExpectedCrLf);
         }
 
         pos.index_in += 2;
@@ -127,7 +126,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_dechunk_size() -> Result<()> {
+    fn test_dechunk_size() -> Result<(), Error> {
         let mut d = Dechunker::new();
         let mut b = [0; 1024];
         assert_eq!(d.parse_input(b"", &mut b)?, (0, 0));
@@ -140,7 +139,7 @@ mod test {
     }
 
     #[test]
-    fn test_dechunk_size_meta() -> Result<()> {
+    fn test_dechunk_size_meta() -> Result<(), Error> {
         let mut d = Dechunker::new();
         let mut b = [0; 1024];
         assert_eq!(d.parse_input(b"2;meta\r", &mut b)?, (0, 0));
@@ -149,7 +148,7 @@ mod test {
     }
 
     #[test]
-    fn test_dechunk_data() -> Result<()> {
+    fn test_dechunk_data() -> Result<(), Error> {
         let mut d = Dechunker::new();
         let mut b = [0; 1024];
         assert_eq!(d.parse_input(b"2\r\nOK", &mut b)?, (5, 2));
