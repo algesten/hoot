@@ -244,7 +244,7 @@ impl<'a> State<'a, SendBody> {
         self.inner.call.as_with_body().request_finished()
     }
 
-    pub fn proceed(mut self) -> Result<State<'a, RecvResponse>, Error> {
+    pub fn proceed(mut self) -> State<'a, RecvResponse> {
         assert!(self.can_proceed(), "SendBody cannot proceed");
 
         let call_body = match self.inner.call {
@@ -259,7 +259,7 @@ impl<'a> State<'a, SendBody> {
         let call = CallHolder::RecvResponse(call_recv);
         self.inner.call = call;
 
-        Ok(State::wrap(self.inner))
+        State::wrap(self.inner)
     }
 }
 
