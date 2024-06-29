@@ -12,7 +12,6 @@ use super::holder::CallHolder;
 
 pub mod state {
     pub struct Prepare(());
-    pub struct ObtainConnection(());
     pub struct SendRequest(());
     pub struct Await100(());
     pub struct SendBody(());
@@ -20,8 +19,6 @@ pub mod state {
     pub struct RecvBody(());
     pub struct Redirect(());
     pub struct Cleanup(());
-    pub struct ReuseConnection(());
-    pub struct CloseConnection(());
 }
 use self::state::*;
 
@@ -119,18 +116,6 @@ impl<'a> State<'a, Prepare> {
         <HeaderValue as TryFrom<V>>::Error: Into<http::Error>,
     {
         self.call_mut().request_mut().set_header(key, value)
-    }
-
-    pub fn proceed(self) -> State<'a, ObtainConnection> {
-        State::wrap(self.inner)
-    }
-}
-
-// //////////////////////////////////////////////////////////////////////////////////////////// OBTAIN
-
-impl<'a> State<'a, ObtainConnection> {
-    pub fn uri(&self) -> &Uri {
-        self.call().request().uri()
     }
 
     pub fn proceed(self) -> State<'a, SendRequest> {
@@ -427,31 +412,17 @@ impl<'a> State<'a, Redirect> {
 // //////////////////////////////////////////////////////////////////////////////////////////// CLEANUP
 
 impl<'a> State<'a, Cleanup> {
-    pub fn proceed(self) -> CleanupResult<'a> {
-        let reason = self.inner.close_reason.first();
+    pub fn must_close_connection(&self) -> bool {
+        let maybe_reason = self.inner.close_reason.first();
 
-        if let Some(reason) = reason {
+        if let Some(reason) = maybe_reason {
             debug!("Close connection because {}", reason);
-
-            CleanupResult::CloseConnection(State::wrap(self.inner))
+            true
         } else {
-            CleanupResult::ReuseConnection(State::wrap(self.inner))
+            false
         }
     }
 }
-
-pub enum CleanupResult<'a> {
-    ReuseConnection(State<'a, ReuseConnection>),
-    CloseConnection(State<'a, CloseConnection>),
-}
-
-// //////////////////////////////////////////////////////////////////////////////////////////// REUSE
-
-impl<'a> State<'a, ReuseConnection> {}
-
-// //////////////////////////////////////////////////////////////////////////////////////////// CLOSE
-
-impl<'a> State<'a, CloseConnection> {}
 
 // ////////////////////////////////////////////////////////////////////////////////////////////
 
