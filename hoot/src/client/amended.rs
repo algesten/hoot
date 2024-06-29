@@ -100,6 +100,17 @@ impl<'a> AmendedRequest<'a> {
         self.headers().count()
     }
 
+    pub fn get_header(&self, key: &str) -> Option<&HeaderValue> {
+        // First search local headers
+        self.headers
+            .iter()
+            .find(|(k, _)| k == key)
+            .as_ref()
+            .map(|v| &v.1)
+            // Fall back on request headers
+            .or_else(|| self.request.headers().get(key))
+    }
+
     pub fn set_method(&mut self, method: Method) {
         assert!(!self.released, "Set method on released request");
 
@@ -127,5 +138,11 @@ impl<'a> AmendedRequest<'a> {
             method: self.method,
             released: true,
         }
+    }
+
+    pub fn is_expect_100(&self) -> bool {
+        self.get_header("expect")
+            .map(|v| v == "100-continue")
+            .unwrap_or(false)
     }
 }

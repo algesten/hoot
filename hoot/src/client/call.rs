@@ -238,13 +238,17 @@ impl<'a> Call<'a, WithBody> {
     pub fn write(&mut self, input: &[u8], output: &mut [u8]) -> Result<(usize, usize), Error> {
         let mut w = Writer::new(output);
 
+        // If we are doing Expect: 100-continue, writing the request must stop after
+        // writing the headers and before sending the request body.
+        let stop_before_body = self.state.phase.is_before_body() && self.request.is_expect_100();
+
         if self.state.phase.is_before_body() {
             try_write_prelude(&self.request, &mut self.state, &mut w)?;
         }
 
         let mut input_used = 0;
 
-        if self.state.phase.is_body() {
+        if !stop_before_body && self.state.phase.is_body() {
             if !input.is_empty() && self.state.writer.is_ended() {
                 return Err(Error::BodyContentAfterFinish);
             }
