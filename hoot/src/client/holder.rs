@@ -25,7 +25,7 @@ impl<'a> CallHolder<'a> {
         })
     }
 
-    pub fn amended(&self) -> &AmendedRequest<'a> {
+    pub fn request(&self) -> &AmendedRequest<'a> {
         match self {
             CallHolder::WithoutBody(v) => v.amended(),
             CallHolder::WithBody(v) => v.amended(),
@@ -34,7 +34,7 @@ impl<'a> CallHolder<'a> {
         }
     }
 
-    pub fn amended_mut(&mut self) -> &mut AmendedRequest<'a> {
+    pub fn request_must(&mut self) -> &mut AmendedRequest<'a> {
         match self {
             CallHolder::WithoutBody(v) => v.amended_mut(),
             CallHolder::WithBody(v) => v.amended_mut(),

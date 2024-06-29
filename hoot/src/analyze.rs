@@ -1,4 +1,4 @@
-use http::{Method, Request, Version};
+use http::{HeaderName, HeaderValue, Method, Request, Version};
 
 use crate::body::BodyWriter;
 use crate::util::compare_lowercase_ascii;
@@ -41,6 +41,16 @@ impl MethodExt for Method {
         }
 
         Ok(())
+    }
+}
+
+pub(crate) trait HeaderIterExt {
+    fn has(self, key: &str, value: &str) -> bool;
+}
+
+impl<'a, I: Iterator<Item = (&'a HeaderName, &'a HeaderValue)>> HeaderIterExt for I {
+    fn has(self, key: &str, value: &str) -> bool {
+        self.filter(|i| i.0 == key).any(|i| i.1 == value)
     }
 }
 

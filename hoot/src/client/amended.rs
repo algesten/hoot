@@ -1,6 +1,7 @@
 use http::{HeaderName, HeaderValue, Method, Request, Uri, Version};
 use once_cell::sync::OnceCell;
 
+use crate::analyze::HeaderIterExt;
 use crate::Error;
 
 /// `Request` with amends.
@@ -41,6 +42,7 @@ pub(crate) struct AmendedRequest<'a> {
 impl<'a> AmendedRequest<'a> {
     pub fn new(request: &'a Request<()>) -> Self {
         let method = request.method().clone();
+
         AmendedRequest {
             request,
             headers: Vec::with_capacity(50),
@@ -100,16 +102,16 @@ impl<'a> AmendedRequest<'a> {
         self.headers().count()
     }
 
-    pub fn get_header(&self, key: &str) -> Option<&HeaderValue> {
-        // First search local headers
-        self.headers
-            .iter()
-            .find(|(k, _)| k == key)
-            .as_ref()
-            .map(|v| &v.1)
-            // Fall back on request headers
-            .or_else(|| self.request.headers().get(key))
-    }
+    // pub fn get_header(&self, key: &str) -> Option<&HeaderValue> {
+    //     // First search local headers
+    //     self.headers
+    //         .iter()
+    //         .find(|(k, _)| k == key)
+    //         .as_ref()
+    //         .map(|v| &v.1)
+    //         // Fall back on request headers
+    //         .or_else(|| self.request.headers().get(key))
+    // }
 
     pub fn set_method(&mut self, method: Method) {
         assert!(!self.released, "Set method on released request");
@@ -141,8 +143,6 @@ impl<'a> AmendedRequest<'a> {
     }
 
     pub fn is_expect_100(&self) -> bool {
-        self.get_header("expect")
-            .map(|v| v == "100-continue")
-            .unwrap_or(false)
+        self.headers().has("expect", "100-continue")
     }
 }
