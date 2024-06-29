@@ -1,4 +1,58 @@
 //! HTTP/1.1 client
+//!
+//! # Example
+//!
+//! ```
+//! use hoot::client::State;
+//! use hoot::http::Request;
+//!
+//! let request = Request::put("https://example.test/my-path")
+//!     .header("Expect", "100-continue")
+//!     .header("x-foo", "bar")
+//!     .body(())
+//!     .unwrap();
+//!
+//! let mut state = State::new(&request).unwrap();
+//!
+//! // Prepare with state from cookie jar. The uri
+//! // is used to key the cookies.
+//! let uri = state.uri();
+//!
+//! // state.header("Cookie", "my_cookie1=value1");
+//! // state.header("Cookie", "my_cookie2=value2");
+//!
+//! // Obtain a connection for the uri, either a
+//! // pooled connection from a previous http/1.1
+//! // keep-alive, or open a new. The connection
+//! // must be TLS wrapped if the scheme so indicate.
+//! // let connection = todo!();
+//!
+//! // Hoot is Sans-IO meaning it does not use any
+//! // Write trait or similar. Requests and request
+//! // bodies are written to a buffer that in turn
+//! // should be sent via the connection.
+//! let mut output = vec![0_u8; 1024];
+//! let buf = &mut output[..];
+//!
+//! // Proceed to the next state writing the request.
+//! // Hoot calls this the request method/path + headers
+//! // the "prelude".
+//! let mut state = state.proceed();
+//!
+//! let output_used = state.write(buf).unwrap();
+//! assert_eq!(output_used, 107);
+//!
+//! println!("{}", std::str::from_utf8(&buf[..output_used]).unwrap());
+//!
+//! assert_eq!(&buf[..output_used], b"\
+//!     PUT /my-path HTTP/1.1\r\n\
+//!     host: example.test\r\n\
+//!     transfer-encoding: chunked\r\n\
+//!     expect: 100-continue\r\n\
+//!     x-foo: bar\r\n\
+//!     \r\n");
+//!
+//! ```
 
 mod call;
 pub use call::Call;
@@ -64,7 +118,7 @@ mod test {
     }
 
     #[test]
-    fn head() {
+    fn head_simple() {
         let req = Request::head("http://foo.test/page").body(()).unwrap();
         let mut call = Call::without_body(&req).unwrap();
 
@@ -72,7 +126,7 @@ mod test {
         let n = call.write(&mut output).unwrap();
         let s = str::from_utf8(&output[..n]).unwrap();
 
-        assert_eq!(s, "HEAD /page HTTP/1.1\r\nhost: foo.test\r\n");
+        assert_eq!(s, "HEAD /page HTTP/1.1\r\nhost: foo.test\r\n\r\n");
     }
 
     #[test]
@@ -96,13 +150,13 @@ mod test {
         let (i2, n2) = call.write(b"hallo", &mut output[n1..]).unwrap();
         assert_eq!(i1, 0);
         assert_eq!(i2, 5);
-        assert_eq!(n1, 54);
+        assert_eq!(n1, 56);
         assert_eq!(n2, 5);
         let s = str::from_utf8(&output[..n1 + n2]).unwrap();
 
         assert_eq!(
             s,
-            "POST /page HTTP/1.1\r\nhost: f.test\r\ncontent-length: 5\r\nhallo"
+            "POST /page HTTP/1.1\r\nhost: f.test\r\ncontent-length: 5\r\n\r\nhallo"
         );
     }
 
@@ -135,10 +189,10 @@ mod test {
         }
 
         {
-            let (i, n) = call.write(body, &mut output[..19]).unwrap();
+            let (i, n) = call.write(body, &mut output[..21]).unwrap();
             assert_eq!(i, 0);
             let s = str::from_utf8(&output[..n]).unwrap();
-            assert_eq!(s, "content-length: 5\r\n");
+            assert_eq!(s, "content-length: 5\r\n\r\n");
             assert!(!call.request_finished());
         }
 
@@ -184,13 +238,13 @@ mod test {
         let (i2, n2) = call.write(b"ha", &mut output[n1..]).unwrap();
         assert_eq!(i1, 0);
         assert_eq!(i2, 2);
-        assert_eq!(n1, 54);
+        assert_eq!(n1, 56);
         assert_eq!(n2, 2);
         let s = str::from_utf8(&output[..n1 + n2]).unwrap();
 
         assert_eq!(
             s,
-            "POST /page HTTP/1.1\r\nhost: f.test\r\ncontent-length: 5\r\nha"
+            "POST /page HTTP/1.1\r\nhost: f.test\r\ncontent-length: 5\r\n\r\nha"
         );
 
         assert!(!call.request_finished());
@@ -220,14 +274,14 @@ mod test {
         let (_, n3) = call.write(&[], &mut output[n1 + n2..]).unwrap();
         assert_eq!(i1, 0);
         assert_eq!(i2, 5);
-        assert_eq!(n1, 63);
+        assert_eq!(n1, 65);
         assert_eq!(n2, 10);
         assert_eq!(n3, 5);
         let s = str::from_utf8(&output[..n1 + n2 + n3]).unwrap();
 
         assert_eq!(
             s,
-            "POST /page HTTP/1.1\r\nhost: f.test\r\ntransfer-encoding: chunked\r\n5\r\nhallo\r\n0\r\n\r\n"
+            "POST /page HTTP/1.1\r\nhost: f.test\r\ntransfer-encoding: chunked\r\n\r\n5\r\nhallo\r\n0\r\n\r\n"
         );
     }
 
@@ -253,7 +307,7 @@ mod test {
 
         assert_eq!(i1, 0);
         assert_eq!(i2, 5);
-        assert_eq!(n1, 63);
+        assert_eq!(n1, 65);
         assert_eq!(n2, 10);
         assert_eq!(i3, 0);
         assert_eq!(n3, 5);
@@ -262,7 +316,7 @@ mod test {
 
         assert_eq!(
             s,
-            "POST /page HTTP/1.1\r\nhost: f.test\r\ntransfer-encoding: chunked\r\n5\r\nhallo\r\n0\r\n\r\n"
+            "POST /page HTTP/1.1\r\nhost: f.test\r\ntransfer-encoding: chunked\r\n\r\n5\r\nhallo\r\n0\r\n\r\n"
         );
     }
 
@@ -278,7 +332,7 @@ mod test {
         let (i1, n1) = call.write(b"hallo", &mut output).unwrap();
         let (i2, n2) = call.write(b"hallo", &mut output[n1..]).unwrap();
         assert_eq!(i1, 0);
-        assert_eq!(n1, 54);
+        assert_eq!(n1, 56);
         assert_eq!(i2, 5);
         assert_eq!(n2, 5);
 
@@ -286,7 +340,7 @@ mod test {
 
         assert_eq!(
             s,
-            "POST /page HTTP/1.1\r\nhost: f.test\r\ncontent-length: 5\r\nhallo"
+            "POST /page HTTP/1.1\r\nhost: f.test\r\ncontent-length: 5\r\n\r\nhallo"
         );
     }
 

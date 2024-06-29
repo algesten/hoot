@@ -167,7 +167,7 @@ impl<'a> Call<'a, WithoutBody> {
     /// let n = call.write(&mut output).unwrap();
     /// let s = std::str::from_utf8(&output[..n]).unwrap();
     ///
-    /// assert_eq!(s, "HEAD /page HTTP/1.1\r\nhost: foo.test\r\n");
+    /// assert_eq!(s, "HEAD /page HTTP/1.1\r\nhost: foo.test\r\n\r\n");
     /// ```
     pub fn write(&mut self, output: &mut [u8]) -> Result<usize, Error> {
         let mut w = Writer::new(output);
@@ -228,7 +228,7 @@ impl<'a> Call<'a, WithBody> {
     /// assert_eq!(
     ///     s,
     ///     "POST /page HTTP/1.1\r\nhost: f.test\r\n\
-    ///     transfer-encoding: chunked\r\n5\r\nhallo\r\n0\r\n\r\n"
+    ///     transfer-encoding: chunked\r\n\r\n5\r\nhallo\r\n0\r\n\r\n"
     /// );
     /// ```
     pub fn write(&mut self, input: &[u8], output: &mut [u8]) -> Result<(usize, usize), Error> {
@@ -313,12 +313,13 @@ fn try_write_prelude_part(
         }
 
         Phase::SendHeaders(index) => {
+            let header_count = request.headers_len();
             let all = request.headers();
             let skipped = all.skip(*index);
 
-            do_write_headers(skipped, index, w);
+            do_write_headers(skipped, index, header_count - 1, w);
 
-            if *index == request.headers_len() {
+            if *index == header_count {
                 state.phase = Phase::SendBody;
             }
             false
@@ -333,7 +334,7 @@ fn do_write_send_line(line: (&Method, &str, Version), w: &mut Writer) -> bool {
     w.try_write(|w| write!(w, "{} {} {:?}\r\n", line.0, line.1, line.2))
 }
 
-fn do_write_headers<'a, I>(headers: I, index: &mut usize, w: &mut Writer)
+fn do_write_headers<'a, I>(headers: I, index: &mut usize, last_index: usize, w: &mut Writer)
 where
     I: Iterator<Item = (&'a HeaderName, &'a HeaderValue)>,
 {
@@ -342,6 +343,9 @@ where
             write!(w, "{}: ", h.0)?;
             w.write_all(h.1.as_bytes())?;
             write!(w, "\r\n")?;
+            if *index == last_index {
+                write!(w, "\r\n")?;
+            }
             Ok(())
         });
 
