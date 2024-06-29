@@ -1,5 +1,60 @@
 //! HTTP/1.1 client
 //!
+//! hoot is Sans-IO, which means "writing" and "reading" are made via buffers
+//! rather than the Write/Read std traits.
+//!
+//! The [`State`] object attempts to encode correct HTTP/1.1 handling using
+//! state variables, for example `State<'a, SendRequest>` to represent the
+//! lifecycle stage where we are to send the request.
+//!
+//! The states are:
+//!
+//! * **Prepare** - Preparing a request means 1) adding headers such as
+//!   cookies. 2) acquiring the connection from a pool or opening a new
+//!   socket (potentially wrappping in TLS)
+//! * **SendRequest** - Send the "prelude", which is the method, path
+//!   and version as well as the request headers
+//! * **SendBody** - Send the request body
+//! * **Await100** - If there is an `Expect: 100-continue` header, the
+//!   client should pause before sending the body
+//! * **RecvResponse** - Receive the response, meaning the status and
+//!   version and the response headers
+//! * *RecvBody** - Receive the response body
+//! * **Redirect** - Handle redirects, potentially spawning new requests
+//! * **Cleanup** - Return the connection to the pool or close it
+//!
+//!
+//! ```text
+//!                             ┌──────────────────┐
+//! ┌ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─▶│     Prepare      │
+//!                             └──────────────────┘
+//! │                                     │
+//!                                       ▼
+//! │                           ┌──────────────────┐
+//!                          ┌──│   SendRequest    │──────────────┐
+//! │                        │  └──────────────────┘              │
+//!                          │            │                       │
+//! │                        │            ▼                       ▼
+//!                          │  ┌──────────────────┐    ┌──────────────────┐
+//! │                        │  │     SendBody     │◀───│     Await100     │
+//!                          │  └──────────────────┘    └──────────────────┘
+//! │                        │            │                       │
+//!                          │            ▼                       │
+//! │                        └─▶┌──────────────────┐◀─────────────┘
+//!              ┌──────────────│   RecvResponse   │──┐
+//! │            │              └──────────────────┘  │
+//!              │                        │           │
+//! │            ▼                        ▼           │
+//!    ┌──────────────────┐     ┌──────────────────┐  │
+//! └ ─│     Redirect     │◀────│     RecvBody     │  │
+//!    └──────────────────┘     └──────────────────┘  │
+//!              │                        │           │
+//!              │                        ▼           │
+//!              │              ┌──────────────────┐  │
+//!              └─────────────▶│     Cleanup      │◀─┘
+//!                             └──────────────────┘
+//! ```
+//!
 //! # Example
 //!
 //! ```
