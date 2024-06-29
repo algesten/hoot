@@ -74,6 +74,10 @@ impl<'a> State<'a, ObtainConnection> {
 }
 
 impl<'a> State<'a, SendRequest> {
+    // pub fn write(&mut self, output: &mut &[u8]) -> Result<usize, Error> {
+
+    // }
+
     pub fn proceed(self) -> SendRequestResult<'a> {
         todo!()
     }

@@ -78,7 +78,7 @@ mod test {
     }
 
     #[test]
-    fn post() {
+    fn post_simple() {
         let req = Request::post("http://f.test/page")
             .header("content-length", 5)
             .body(())
@@ -86,9 +86,13 @@ mod test {
         let mut call = Call::with_body(&req).unwrap();
 
         let mut output = vec![0; 1024];
-        let (i, n) = call.write(b"hallo", &mut output).unwrap();
-        assert_eq!(i, 5);
-        let s = str::from_utf8(&output[..n]).unwrap();
+        let (i1, n1) = call.write(b"hallo", &mut output).unwrap();
+        let (i2, n2) = call.write(b"hallo", &mut output[n1..]).unwrap();
+        assert_eq!(i1, 0);
+        assert_eq!(i2, 5);
+        assert_eq!(n1, 54);
+        assert_eq!(n2, 5);
+        let s = str::from_utf8(&output[..n1 + n2]).unwrap();
 
         assert_eq!(
             s,
@@ -113,7 +117,7 @@ mod test {
             assert_eq!(i, 0);
             let s = str::from_utf8(&output[..n]).unwrap();
             assert_eq!(s, "POST /page HTTP/1.1\r\n");
-            assert!(!call.request_finished());
+            assert!(!call.is_after_body());
         }
 
         {
@@ -121,7 +125,7 @@ mod test {
             assert_eq!(i, 0);
             let s = str::from_utf8(&output[..n]).unwrap();
             assert_eq!(s, "host: f.test\r\n");
-            assert!(!call.request_finished());
+            assert!(!call.is_after_body());
         }
 
         {
@@ -129,15 +133,16 @@ mod test {
             assert_eq!(i, 0);
             let s = str::from_utf8(&output[..n]).unwrap();
             assert_eq!(s, "content-length: 5\r\n");
-            assert!(!call.request_finished());
+            assert!(!call.is_after_body());
         }
 
         {
             let (i, n) = call.write(body, &mut output[..25]).unwrap();
+            assert_eq!(n, 5);
             assert_eq!(i, 5);
             let s = str::from_utf8(&output[..n]).unwrap();
             assert_eq!(s, "hallo");
-            assert!(call.request_finished());
+            assert!(call.is_after_body());
         }
     }
 
@@ -153,6 +158,9 @@ mod test {
 
         let mut output = vec![0; 1024];
         let r = call.write(body, &mut output);
+        assert!(r.is_ok());
+
+        let r = call.write(body, &mut output);
 
         assert_eq!(r.unwrap_err(), Error::BodyLargerThanContentLength);
     }
@@ -166,16 +174,20 @@ mod test {
         let mut call = Call::with_body(&req).unwrap();
 
         let mut output = vec![0; 1024];
-        let (i, n1) = call.write(b"ha", &mut output).unwrap();
-        assert_eq!(i, 2);
-        let s = str::from_utf8(&output[..n1]).unwrap();
+        let (i1, n1) = call.write(b"ha", &mut output).unwrap();
+        let (i2, n2) = call.write(b"ha", &mut output[n1..]).unwrap();
+        assert_eq!(i1, 0);
+        assert_eq!(i2, 2);
+        assert_eq!(n1, 54);
+        assert_eq!(n2, 2);
+        let s = str::from_utf8(&output[..n1 + n2]).unwrap();
 
         assert_eq!(
             s,
             "POST /page HTTP/1.1\r\nhost: f.test\r\ncontent-length: 5\r\nha"
         );
 
-        assert!(!call.request_finished());
+        assert!(!call.is_after_body());
 
         let (i, n2) = call.write(b"llo", &mut output).unwrap();
         assert_eq!(i, 3);
@@ -183,7 +195,7 @@ mod test {
 
         assert_eq!(s, "llo");
 
-        assert!(call.request_finished());
+        assert!(call.is_after_body());
     }
 
     #[test]
@@ -197,10 +209,15 @@ mod test {
         let body = b"hallo";
 
         let mut output = vec![0; 1024];
-        let (i, n1) = call.write(body, &mut output).unwrap();
-        assert_eq!(i, 5);
-        let (_, n2) = call.write(&[], &mut output[n1..]).unwrap();
-        let s = str::from_utf8(&output[..n1 + n2]).unwrap();
+        let (i1, n1) = call.write(body, &mut output).unwrap();
+        let (i2, n2) = call.write(body, &mut output[n1..]).unwrap();
+        let (_, n3) = call.write(&[], &mut output[n1 + n2..]).unwrap();
+        assert_eq!(i1, 0);
+        assert_eq!(i2, 5);
+        assert_eq!(n1, 63);
+        assert_eq!(n2, 10);
+        assert_eq!(n3, 5);
+        let s = str::from_utf8(&output[..n1 + n2 + n3]).unwrap();
 
         assert_eq!(
             s,
@@ -222,16 +239,20 @@ mod test {
         let mut call = Call::with_body(&req).unwrap();
 
         let mut output = vec![0; 1024];
-        let (in1, out1) = call.write(b"hallo", &mut output).unwrap();
-        assert_eq!(in1, 5);
-        assert_eq!(out1, 73);
+        let (i1, n1) = call.write(b"hallo", &mut output).unwrap();
+        let (i2, n2) = call.write(b"hallo", &mut output[n1..]).unwrap();
 
         // Send end
-        let (in2, out2) = call.write(&[], &mut output[out1..]).unwrap();
-        assert_eq!(in2, 0);
-        assert_eq!(out2, 5);
+        let (i3, n3) = call.write(&[], &mut output[n1 + n2..]).unwrap();
 
-        let s = str::from_utf8(&output[..(out1 + out2)]).unwrap();
+        assert_eq!(i1, 0);
+        assert_eq!(i2, 5);
+        assert_eq!(n1, 63);
+        assert_eq!(n2, 10);
+        assert_eq!(i3, 0);
+        assert_eq!(n3, 5);
+
+        let s = str::from_utf8(&output[..(n1 + n2 + n3)]).unwrap();
 
         assert_eq!(
             s,
@@ -248,11 +269,14 @@ mod test {
         let mut call = Call::with_body(&req).unwrap();
 
         let mut output = vec![0; 1024];
-        let (in1, out1) = call.write(b"hallo", &mut output).unwrap();
-        assert_eq!(in1, 5);
-        assert_eq!(out1, 59);
+        let (i1, n1) = call.write(b"hallo", &mut output).unwrap();
+        let (i2, n2) = call.write(b"hallo", &mut output[n1..]).unwrap();
+        assert_eq!(i1, 0);
+        assert_eq!(n1, 54);
+        assert_eq!(i2, 5);
+        assert_eq!(n2, 5);
 
-        let s = str::from_utf8(&output[..(out1)]).unwrap();
+        let s = str::from_utf8(&output[..(n1 + n2)]).unwrap();
 
         assert_eq!(
             s,
@@ -266,12 +290,12 @@ mod test {
         let mut call = Call::with_body(&req).unwrap();
 
         let mut output = vec![0; 1024];
-        let (_, out1) = call.write(b"hallo", &mut output).unwrap();
+        let (_, n1) = call.write(b"hallo", &mut output).unwrap();
 
         // Send end
-        let (_, out2) = call.write(&[], &mut output[out1..]).unwrap();
+        let (_, n2) = call.write(&[], &mut output[n1..]).unwrap();
 
-        let err = call.write(b"after end", &mut output[(out1 + out2)..]);
+        let err = call.write(b"after end", &mut output[(n1 + n2)..]);
 
         assert_eq!(err, Err(Error::BodyContentAfterFinish));
     }
@@ -285,10 +309,11 @@ mod test {
         let mut call = Call::with_body(&req).unwrap();
 
         let mut output = vec![0; 1024];
-        let (_, n) = call.write(b"hallo", &mut output).unwrap();
+        let (_, n1) = call.write(b"hallo", &mut output).unwrap();
+        let (_, n2) = call.write(b"hallo", &mut output[n1..]).unwrap();
 
         // this is more than content-length
-        let err = call.write(b"fail", &mut output[n..]).unwrap_err();
+        let err = call.write(b"fail", &mut output[n1 + n2..]).unwrap_err();
 
         assert_eq!(err, Error::BodyContentAfterFinish);
     }

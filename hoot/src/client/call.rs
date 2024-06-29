@@ -222,12 +222,13 @@ impl<'a> Call<'a, WithBody> {
     ///
     /// // Send body
     /// let mut output = vec![0; 1024];
-    /// let (i, n1) = call.write(body, &mut output).unwrap();
+    /// let (_, n1) = call.write(body, &mut output).unwrap(); // send headers
+    /// let (i, n2) = call.write(body, &mut output[n1..]).unwrap(); // send body
     /// assert_eq!(i, 5);
     ///
     /// // Indicate the body is finished by sending &[]
-    /// let (_, n2) = call.write(&[], &mut output[n1..]).unwrap();
-    /// let s = std::str::from_utf8(&output[..n1 + n2]).unwrap();
+    /// let (_, n3) = call.write(&[], &mut output[n1 + n2..]).unwrap();
+    /// let s = std::str::from_utf8(&output[..n1 + n2 + n3]).unwrap();
     ///
     /// assert_eq!(
     ///     s,
@@ -238,17 +239,11 @@ impl<'a> Call<'a, WithBody> {
     pub fn write(&mut self, input: &[u8], output: &mut [u8]) -> Result<(usize, usize), Error> {
         let mut w = Writer::new(output);
 
-        // If we are doing Expect: 100-continue, writing the request must stop after
-        // writing the headers and before sending the request body.
-        let stop_before_body = self.state.phase.is_before_body() && self.request.is_expect_100();
-
-        if self.state.phase.is_before_body() {
-            try_write_prelude(&self.request, &mut self.state, &mut w)?;
-        }
-
         let mut input_used = 0;
 
-        if !stop_before_body && self.state.phase.is_body() {
+        if self.is_before_body() {
+            try_write_prelude(&self.request, &mut self.state, &mut w)?;
+        } else if self.is_body() {
             if !input.is_empty() && self.state.writer.is_ended() {
                 return Err(Error::BodyContentAfterFinish);
             }
@@ -265,11 +260,16 @@ impl<'a> Call<'a, WithBody> {
         Ok((input_used, output_used))
     }
 
-    /// Checks if the request if finished
-    ///
-    /// Until [`Call::write`] is called with enough input to fulfil the body.
-    pub fn request_finished(&self) -> bool {
-        self.state.phase.is_body() && self.state.writer.is_ended()
+    pub fn is_before_body(&self) -> bool {
+        self.state.phase.is_before_body()
+    }
+
+    pub fn is_body(&self) -> bool {
+        self.state.phase.is_body()
+    }
+
+    pub fn is_after_body(&self) -> bool {
+        self.state.writer.is_ended()
     }
 
     /// Proceed to receiving a response
