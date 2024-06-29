@@ -26,8 +26,11 @@ pub struct RecvResponse(());
 #[doc(hidden)]
 pub struct RecvBody(());
 
-/// Max number of headers in an HTTP response
-pub const MAX_HEADERS: usize = 100;
+/// Max number of additional headers to amend an HTTP request with
+pub const MAX_EXTRA_HEADERS: usize = 64;
+
+/// Max number of headers to parse from an HTTP response
+pub const MAX_RESPONSE_HEADERS: usize = 128;
 
 #[cfg(test)]
 mod test {

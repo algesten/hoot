@@ -1,6 +1,9 @@
 use http::{HeaderName, HeaderValue, Method, Request, Uri, Version};
+use smallvec::SmallVec;
 
 use crate::Error;
+
+use super::MAX_EXTRA_HEADERS;
 
 /// `Request` with amends.
 ///
@@ -30,7 +33,7 @@ use crate::Error;
 pub(crate) struct AmendedRequest<'a> {
     request: &'a Request<()>,
     uri: Option<Uri>,
-    headers: Vec<(HeaderName, HeaderValue)>,
+    headers: SmallVec<[(HeaderName, HeaderValue); MAX_EXTRA_HEADERS]>,
     method: Method,
 }
 
@@ -41,7 +44,7 @@ impl<'a> AmendedRequest<'a> {
         AmendedRequest {
             request,
             uri: None,
-            headers: Vec::with_capacity(50),
+            headers: SmallVec::new(),
             method,
         }
     }
@@ -62,7 +65,7 @@ impl<'a> AmendedRequest<'a> {
         }
     }
 
-    pub fn line(&self) -> (&Method, &str, Version) {
+    pub fn prelude(&self) -> (&Method, &str, Version) {
         let r = &self.request;
         (
             r.method(),

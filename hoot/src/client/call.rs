@@ -11,7 +11,7 @@ use crate::util::Writer;
 use crate::Error;
 
 use super::amended::AmendedRequest;
-use super::{RecvBody, RecvResponse, WithBody, WithoutBody, MAX_HEADERS};
+use super::{RecvBody, RecvResponse, WithBody, WithoutBody, MAX_RESPONSE_HEADERS};
 
 /// An HTTP/1.1 call
 ///
@@ -305,7 +305,7 @@ fn try_write_prelude_part(
 ) -> bool {
     match &mut state.phase {
         Phase::SendLine => {
-            let success = do_write_send_line(request.line(), w);
+            let success = do_write_send_line(request.prelude(), w);
             if success {
                 state.phase = Phase::SendHeaders(0);
             }
@@ -364,7 +364,7 @@ impl<'a> Call<'a, RecvResponse> {
     /// Once the response headers are succesfully read, use [`Call::into_body()`] to proceed
     /// reading the response body.
     pub fn try_response(&mut self, input: &[u8]) -> Result<Option<(usize, Response<()>)>, Error> {
-        let mut headers = [httparse::EMPTY_HEADER; MAX_HEADERS]; // ~3k for 100 headers
+        let mut headers = [httparse::EMPTY_HEADER; MAX_RESPONSE_HEADERS]; // ~3k for 100 headers
 
         let (input_used, response) = match try_parse_response(input, &mut headers)? {
             Some(v) => v,
