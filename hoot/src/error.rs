@@ -82,6 +82,9 @@ pub enum Error {
 
     #[error("illegal redirect of DELETE method")]
     IllegalRedirectDelete,
+
+    #[error("received headers with 100-continue response")]
+    HeadersWith100,
 }
 
 impl From<httparse::Error> for Error {

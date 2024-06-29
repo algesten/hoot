@@ -90,7 +90,7 @@ impl<'a> State<'a, Prepare> {
         }
 
         let should_send_body = request.method().need_request_body();
-        let await_100_continue = request.headers().iter().has("expect", "100-continue");
+        let await_100_continue = request.headers().iter().has_expect_100();
 
         let inner = Inner {
             call,
@@ -266,17 +266,31 @@ impl<'a> State<'a, SendBody> {
 // //////////////////////////////////////////////////////////////////////////////////////////// RECV RESPONSE
 
 impl<'a> State<'a, RecvResponse> {
-    pub fn try_response(&mut self, input: &[u8]) -> Result<Option<(usize, Response<()>)>, Error> {
+    pub fn try_response(&mut self, input: &[u8]) -> Result<(usize, Option<Response<()>>), Error> {
         let maybe_response = self.inner.call.as_recv_response_mut().try_response(input)?;
 
         let (input_used, response) = match maybe_response {
             Some(v) => v,
             // Not enough input for a full response yet
-            None => return Ok(None),
+            None => return Ok((0, None)),
         };
 
+        if response.status() == StatusCode::CONTINUE && self.inner.await_100_continue {
+            // We have received a "delayed" 100-continue. This means the server did
+            // not produce the 100-continue response in time while we were in the
+            // state Await100. This is not an error, it can happen if the network is slow.
+            self.inner.await_100_continue = false;
+
+            // There should be no headers for this response.
+            if !response.headers().is_empty() {
+                return Err(Error::HeadersWith100);
+            }
+
+            // We should consume the response and wait for the next.
+            return Ok((input_used, None));
+        }
+
         self.inner.status = Some(response.status());
-        // TODO(martin): can we avoid this allocation?
         self.inner.location = response.headers().get("location").cloned();
 
         if response.headers().iter().has("connection", "close") {
@@ -285,7 +299,7 @@ impl<'a> State<'a, RecvResponse> {
                 .push(CloseReason::ServerConnectionClose);
         }
 
-        Ok(Some((input_used, response)))
+        Ok((input_used, Some(response)))
     }
 
     pub fn proceed(mut self) -> RecvResponseResult<'a> {
