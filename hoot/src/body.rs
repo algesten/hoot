@@ -13,12 +13,17 @@ pub(crate) struct BodyWriter {
     ended: bool,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 enum SenderMode {
-    #[default]
     None,
     Sized(u64),
     Chunked,
+}
+
+impl Default for SenderMode {
+    fn default() -> Self {
+        Self::None
+    }
 }
 
 const DEFAULT_CHUNK_SIZE: usize = 10 * 1024;
@@ -162,7 +167,7 @@ fn write_chunk(input: &[u8], input_used: &mut usize, w: &mut Writer, max_chunk: 
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum BodyReader {
+pub(crate) enum BodyReader {
     /// No body is expected either due to the status or method.
     NoBody,
     /// Delimited by content-length.
@@ -283,8 +288,9 @@ impl BodyReader {
     }
 
     fn read_limit(&mut self, src: &[u8], dst: &mut [u8]) -> Result<(usize, usize), Error> {
-        let Self::LengthDelimited(left) = self else {
-            unreachable!()
+        let left = match self {
+            BodyReader::LengthDelimited(v) => v,
+            _ => unreachable!(),
         };
         let left_usize = (*left).min(usize::MAX as u64) as usize;
 
@@ -298,8 +304,9 @@ impl BodyReader {
     }
 
     fn read_chunked(&mut self, src: &[u8], dst: &mut [u8]) -> Result<(usize, usize), Error> {
-        let BodyReader::Chunked(dechunker) = self else {
-            unreachable!();
+        let dechunker = match self {
+            BodyReader::Chunked(v) => v,
+            _ => unreachable!(),
         };
 
         let (input_used, output_used) = dechunker.parse_input(src, dst)?;

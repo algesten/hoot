@@ -1,6 +1,5 @@
-use std::sync::OnceLock;
-
 use http::{HeaderName, HeaderValue, Method, Request, Uri, Version};
+use once_cell::sync::OnceCell;
 
 use crate::Error;
 
@@ -115,8 +114,9 @@ impl<'a> AmendedRequest<'a> {
     pub fn into_released<'b>(self) -> AmendedRequest<'b> {
         assert!(!self.released, "Release a released request");
 
-        // TODO(martin): is there a way to avoid a lock here?
-        static EMPTY_REQUEST: OnceLock<Request<()>> = OnceLock::new();
+        // TODO(martin): is there a way to avoid a lock here? That would let us avoid
+        // the once_cell dependency (which can be dropped if MSRV is 1.70).
+        static EMPTY_REQUEST: OnceCell<Request<()>> = OnceCell::new();
 
         // unwrap is ok because building a request like this should not fail.
         let request = EMPTY_REQUEST.get_or_init(|| Request::builder().body(()).unwrap());

@@ -127,14 +127,19 @@ struct BodyState {
     reader: Option<BodyReader>,
 }
 
-#[derive(Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum Phase {
-    #[default]
     SendLine,
     SendHeaders(usize),
     SendBody,
     RecvResponse,
     RecvBody,
+}
+
+impl Default for Phase {
+    fn default() -> Self {
+        Self::SendLine
+    }
 }
 
 impl Phase {
@@ -417,8 +422,9 @@ impl<'b> Call<'b, RecvResponse> {
     ///
     /// Returns `None` if there is no body such as the response to a `HEAD` request.
     pub fn into_body(self) -> Result<Option<Call<'b, RecvBody>>, Error> {
-        let Some(rbm) = &self.state.reader else {
-            return Err(Error::IncompleteResponse);
+        let rbm = match &self.state.reader {
+            Some(v) => v,
+            None => return Err(Error::IncompleteResponse),
         };
 
         // No body is expected either due to Method or status. Call ends here.
