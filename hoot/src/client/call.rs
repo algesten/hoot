@@ -14,6 +14,18 @@ use super::amended::AmendedRequest;
 use super::{RecvBody, RecvResponse, WithBody, WithoutBody};
 
 /// An HTTP/1.1 call
+///
+/// This handles a single request-response including sending and receiving bodies.
+/// It does not follow redirects, handle body transformations (such as compression),
+/// connection handling or agent state (cookies).
+///
+/// In scope is everything to do with the actual transfer:
+///
+/// 1. `Method` dictating whether request and response having a body.
+/// 2. Whether we are sending Content-Length delimited data or chunked
+/// 3. `Host` header if not set (TODO(martin): this does not really belong here?)
+/// 4. Writing and reading the request/response in a Sans-IO style.
+///
 pub struct Call<'a, B> {
     request: AmendedRequest<'a>,
     state: BodyState,
@@ -99,8 +111,12 @@ impl<'a, B> Call<'a, B> {
         })
     }
 
-    pub(crate) fn amended(&self) -> &AmendedRequest {
+    pub(crate) fn amended(&self) -> &AmendedRequest<'a> {
         &self.request
+    }
+
+    pub(crate) fn amended_mut(&mut self) -> &mut AmendedRequest<'a> {
+        &mut self.request
     }
 }
 
