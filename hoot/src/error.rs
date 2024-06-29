@@ -5,6 +5,9 @@ use thiserror::Error;
 #[derive(Debug, Error, PartialEq, Eq)]
 #[allow(missing_docs)]
 pub enum Error {
+    #[error("bad header: {0}")]
+    BadHeader(String),
+
     #[error("unsupported http version")]
     UnsupportedVersion,
 

@@ -10,11 +10,12 @@ use crate::body::{BodyReader, BodyWriter};
 use crate::util::Writer;
 use crate::Error;
 
+use super::amended::AmendedRequest;
 use super::{RecvBody, RecvResponse, WithBody, WithoutBody};
 
 /// An HTTP/1.1 call
 pub struct Call<'a, B> {
-    holder: RequestHolder<'a>,
+    request: AmendedRequest<'a>,
     state: BodyState,
     _ph: PhantomData<B>,
 }
@@ -55,33 +56,26 @@ impl<'a, B> Call<'a, B> {
     fn new(request: &'a Request<()>, default_body_mode: BodyWriter) -> Result<Self, Error> {
         let info = request.analyze(default_body_mode)?;
 
-        const HEADER_IDX_HOST: usize = 0;
-        const HEADER_IDX_BODY: usize = 1;
-
-        let mut preheaders = [None, None];
+        let mut request = AmendedRequest::new(request);
 
         if !info.req_host_header {
             if let Some(host) = request.uri().host() {
                 // User did not set a host header, and there is one in uri, we set that.
-                preheaders[HEADER_IDX_HOST] = Some((
-                    HeaderName::from_static("host"),
-                    HeaderValue::from_str(host).expect("url host to be valid header value"),
-                ));
+                // We need an owned value to set the host header.
+                let host =
+                    HeaderValue::from_str(host).map_err(|e| Error::BadHeader(e.to_string()))?;
+                request.set_header("Host", host)?;
             }
         }
 
         if !info.req_body_header && info.body_mode.has_body() {
             // User did not set a body header, we set one.
-            let value = info.body_mode.body_header();
-            preheaders[HEADER_IDX_BODY] = Some(value);
+            let header = info.body_mode.body_header();
+            request.set_header(header.0, header.1)?;
         }
 
         Ok(Call {
-            holder: RequestHolder {
-                request: Some(request),
-                preheaders,
-                method: request.method().clone(),
-            },
+            request,
             state: BodyState {
                 writer: info.body_mode,
                 ..Default::default()
@@ -96,11 +90,7 @@ impl<'a, B> Call<'a, B> {
         }
 
         Ok(Call {
-            holder: RequestHolder {
-                request: None,
-                preheaders: self.holder.preheaders,
-                method: self.holder.method,
-            },
+            request: self.request.into_released(),
             state: BodyState {
                 phase: Phase::RecvResponse,
                 ..self.state
@@ -108,36 +98,9 @@ impl<'a, B> Call<'a, B> {
             _ph: PhantomData,
         })
     }
-}
 
-struct RequestHolder<'a> {
-    // User provided request.
-    request: Option<&'a Request<()>>,
-    // Headers we need in addition to what's provided by the user.
-    preheaders: [Option<(HeaderName, HeaderValue)>; 2],
-    // When call is converted using into_receive() we release the
-    // lifetime holding the Request<()> – we do however need the Method.
-    method: Method,
-}
-
-impl<'a> RequestHolder<'a> {
-    fn expect_request(&self) -> &Request<()> {
-        // If this happens, we ar calling expect_request() in a state where it isn't expected.
-        self.request.expect("request present in current state")
-    }
-
-    fn all_headers(&self) -> impl Iterator<Item = (&HeaderName, &HeaderValue)> {
-        let headers = self.expect_request().headers();
-
-        self.preheaders
-            .iter()
-            .filter_map(|v| v.as_ref())
-            .map(|v| (&v.0, &v.1))
-            .chain(headers.iter())
-    }
-
-    fn header_len(&self) -> usize {
-        self.all_headers().count()
+    pub(crate) fn amended(&self) -> &AmendedRequest {
+        &self.request
     }
 }
 
@@ -187,7 +150,7 @@ impl<'a> Call<'a, WithoutBody> {
     /// ```
     pub fn write(&mut self, output: &mut [u8]) -> Result<usize, Error> {
         let mut w = Writer::new(output);
-        try_write_prelude(&self.holder, &mut self.state, &mut w)?;
+        try_write_prelude(&self.request, &mut self.state, &mut w)?;
 
         let output_used = w.len();
 
@@ -255,7 +218,7 @@ impl<'a> Call<'a, WithBody> {
         let mut w = Writer::new(output);
 
         if self.state.phase.is_before_body() {
-            try_write_prelude(&self.holder, &mut self.state, &mut w)?;
+            try_write_prelude(&self.request, &mut self.state, &mut w)?;
         }
 
         let mut input_used = 0;
@@ -294,14 +257,14 @@ impl<'a> Call<'a, WithBody> {
 }
 
 fn try_write_prelude(
-    holder: &RequestHolder<'_>,
+    request: &AmendedRequest<'_>,
     state: &mut BodyState,
     w: &mut Writer,
 ) -> Result<(), Error> {
     let at_start = w.len();
 
     loop {
-        if try_write_prelude_part(holder, state, w) {
+        if try_write_prelude_part(request, state, w) {
             continue;
         }
 
@@ -316,13 +279,13 @@ fn try_write_prelude(
 }
 
 fn try_write_prelude_part(
-    holder: &RequestHolder<'_>,
+    request: &AmendedRequest<'_>,
     state: &mut BodyState,
     w: &mut Writer,
 ) -> bool {
     match &mut state.phase {
         Phase::SendLine => {
-            let success = do_write_send_line(holder.expect_request(), w);
+            let success = do_write_send_line(request.line(), w);
             if success {
                 state.phase = Phase::SendHeaders(0);
             }
@@ -330,12 +293,12 @@ fn try_write_prelude_part(
         }
 
         Phase::SendHeaders(index) => {
-            let all = holder.all_headers();
+            let all = request.headers();
             let skipped = all.skip(*index);
 
             do_write_headers(skipped, index, w);
 
-            if *index == holder.header_len() {
+            if *index == request.headers_len() {
                 state.phase = Phase::SendBody;
             }
             false
@@ -346,16 +309,8 @@ fn try_write_prelude_part(
     }
 }
 
-fn do_write_send_line<B>(request: &Request<B>, w: &mut Writer) -> bool {
-    w.try_write(|w| {
-        write!(
-            w,
-            "{} {} {:?}\r\n",
-            request.method(),
-            request.uri().path(),
-            request.version()
-        )
-    })
+fn do_write_send_line(line: (&Method, &str, Version), w: &mut Writer) -> bool {
+    w.try_write(|w| write!(w, "{} {} {:?}\r\n", line.0, line.1, line.2))
 }
 
 fn do_write_headers<'a, I>(headers: I, index: &mut usize, w: &mut Writer)
@@ -428,8 +383,12 @@ impl<'b> Call<'b, RecvResponse> {
             None
         };
 
-        let recv_body_mode =
-            BodyReader::for_response(http10, &self.holder.method, status.as_u16(), &header_lookup)?;
+        let recv_body_mode = BodyReader::for_response(
+            http10,
+            &self.request.method(),
+            status.as_u16(),
+            &header_lookup,
+        )?;
 
         self.state.reader = Some(recv_body_mode);
 
@@ -452,11 +411,7 @@ impl<'b> Call<'b, RecvResponse> {
         }
 
         Ok(Some(Call {
-            holder: RequestHolder {
-                preheaders: self.holder.preheaders,
-                request: None,
-                method: self.holder.method,
-            },
+            request: self.request.into_released(),
             state: BodyState {
                 phase: Phase::RecvBody,
                 ..self.state

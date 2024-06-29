@@ -3,6 +3,8 @@
 mod call;
 pub use call::Call;
 
+mod amended;
+
 /// Type state for requests without bodies via [`Call::without_body()`]
 #[doc(hidden)]
 pub struct WithoutBody(());

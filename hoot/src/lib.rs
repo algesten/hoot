@@ -4,7 +4,7 @@
 #![forbid(unsafe_code)]
 #![warn(clippy::all)]
 #![allow(clippy::uninlined_format_args)]
-#![deny(missing_docs)]
+// #![deny(missing_docs)]
 
 #[macro_use]
 extern crate log;
