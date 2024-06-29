@@ -2,16 +2,16 @@ use std::fmt;
 use std::io::Write;
 use std::marker::PhantomData;
 
-use http::{HeaderName, HeaderValue, Method, Request, Response, StatusCode, Version};
-use httparse::Status;
+use http::{HeaderName, HeaderValue, Method, Request, Response, Version};
 
 use crate::analyze::RequestExt;
 use crate::body::{BodyReader, BodyWriter};
+use crate::parser::try_parse_response;
 use crate::util::Writer;
 use crate::Error;
 
 use super::amended::AmendedRequest;
-use super::{RecvBody, RecvResponse, WithBody, WithoutBody};
+use super::{RecvBody, RecvResponse, WithBody, WithoutBody, MAX_HEADERS};
 
 /// An HTTP/1.1 call
 ///
@@ -96,13 +96,13 @@ impl<'a, B> Call<'a, B> {
         })
     }
 
-    fn do_into_receive<'b>(self) -> Result<Call<'b, RecvResponse>, Error> {
+    fn do_into_receive(self) -> Result<Call<'a, RecvResponse>, Error> {
         if !self.state.writer.is_ended() {
             return Err(Error::UnfinishedRequest);
         }
 
         Ok(Call {
-            request: self.request.into_released(),
+            request: self.request,
             state: BodyState {
                 phase: Phase::RecvResponse,
                 ..self.state
@@ -143,7 +143,7 @@ impl Default for Phase {
 }
 
 impl Phase {
-    fn is_before_body(&self) -> bool {
+    fn is_prelude(&self) -> bool {
         matches!(self, Phase::SendLine | Phase::SendHeaders(_))
     }
 
@@ -178,20 +178,15 @@ impl<'a> Call<'a, WithoutBody> {
         Ok(output_used)
     }
 
-    /// Checks if the request if finished
-    ///
-    /// Until [`Call::write`] is called enough times (or with a sufficiently large buffer), the
-    /// request is not finished.
     pub fn request_finished(&self) -> bool {
-        // SendBody means the entire request header is sent
-        self.state.phase == Phase::SendBody
+        !self.state.phase.is_prelude()
     }
 
     /// Proceed to receiving a response
     ///
     /// Once the request is finished writing, proceed to receiving a response. Will error
     /// if [`Call::request_finished()`] returns `false`.
-    pub fn into_receive<'b>(self) -> Result<Call<'b, RecvResponse>, Error> {
+    pub fn into_receive(self) -> Result<Call<'a, RecvResponse>, Error> {
         self.do_into_receive()
     }
 }
@@ -241,7 +236,7 @@ impl<'a> Call<'a, WithBody> {
 
         let mut input_used = 0;
 
-        if self.is_before_body() {
+        if self.is_prelude() {
             try_write_prelude(&self.request, &mut self.state, &mut w)?;
         } else if self.is_body() {
             if !input.is_empty() && self.state.writer.is_ended() {
@@ -260,15 +255,15 @@ impl<'a> Call<'a, WithBody> {
         Ok((input_used, output_used))
     }
 
-    pub fn is_before_body(&self) -> bool {
-        self.state.phase.is_before_body()
+    pub(crate) fn is_prelude(&self) -> bool {
+        self.state.phase.is_prelude()
     }
 
-    pub fn is_body(&self) -> bool {
+    pub(crate) fn is_body(&self) -> bool {
         self.state.phase.is_body()
     }
 
-    pub fn is_after_body(&self) -> bool {
+    pub fn request_finished(&self) -> bool {
         self.state.writer.is_ended()
     }
 
@@ -276,7 +271,7 @@ impl<'a> Call<'a, WithBody> {
     ///
     /// Once the request is finished writing, proceed to receiving a response. Will error
     /// if [`Call::request_finished()`] returns `false`.
-    pub fn into_receive<'b>(self) -> Result<Call<'b, RecvResponse>, Error> {
+    pub fn into_receive(self) -> Result<Call<'a, RecvResponse>, Error> {
         self.do_into_receive()
     }
 }
@@ -358,7 +353,7 @@ where
     }
 }
 
-impl<'b> Call<'b, RecvResponse> {
+impl<'a> Call<'a, RecvResponse> {
     /// Try reading response headers
     ///
     /// A response is only possible once the `input` holds all the HTTP response
@@ -369,37 +364,15 @@ impl<'b> Call<'b, RecvResponse> {
     /// Once the response headers are succesfully read, use [`Call::into_body()`] to proceed
     /// reading the response body.
     pub fn try_response(&mut self, input: &[u8]) -> Result<Option<(usize, Response<()>)>, Error> {
-        let mut headers = [httparse::EMPTY_HEADER; 50]; // ~1.5k
-        let mut res = httparse::Response::new(&mut headers);
+        let mut headers = [httparse::EMPTY_HEADER; MAX_HEADERS]; // ~3k for 100 headers
 
-        let input_used = match res.parse(input)? {
-            Status::Complete(v) => v,
-            Status::Partial => return Ok(None),
+        let (input_used, response) = match try_parse_response(input, &mut headers)? {
+            Some(v) => v,
+            None => return Ok(None),
         };
 
-        let version = {
-            let v = res.version.ok_or(Error::MissingResponseVersion)?;
-            match v {
-                0 => Version::HTTP_10,
-                1 => Version::HTTP_11,
-                _ => return Err(Error::UnsupportedVersion),
-            }
-        };
-
-        let status = {
-            let v = res.code.ok_or(Error::ResponseMissingStatus)?;
-            StatusCode::from_u16(v).map_err(|_| Error::ResponseInvalidStatus)?
-        };
-
-        let http10 = version == Version::HTTP_10;
-
-        let mut builder = Response::builder().version(version).status(status);
-
-        for h in res.headers {
-            builder = builder.header(h.name, h.value);
-        }
-
-        let response = builder.body(()).expect("a valid response");
+        let http10 = response.version() == Version::HTTP_10;
+        let status = response.status().as_u16();
 
         let header_lookup = |name: &str| {
             if let Some(header) = response.headers().get(name) {
@@ -408,12 +381,8 @@ impl<'b> Call<'b, RecvResponse> {
             None
         };
 
-        let recv_body_mode = BodyReader::for_response(
-            http10,
-            &self.request.method(),
-            status.as_u16(),
-            &header_lookup,
-        )?;
+        let recv_body_mode =
+            BodyReader::for_response(http10, &self.request.method(), status, &header_lookup)?;
 
         self.state.reader = Some(recv_body_mode);
 
@@ -425,7 +394,7 @@ impl<'b> Call<'b, RecvResponse> {
     /// Errors if called before [`Call::try_response()`] has produced a [`Response`].
     ///
     /// Returns `None` if there is no body such as the response to a `HEAD` request.
-    pub fn into_body(self) -> Result<Option<Call<'b, RecvBody>>, Error> {
+    pub fn into_body(self) -> Result<Option<Call<'a, RecvBody>>, Error> {
         let rbm = match &self.state.reader {
             Some(v) => v,
             None => return Err(Error::IncompleteResponse),
@@ -437,7 +406,7 @@ impl<'b> Call<'b, RecvResponse> {
         }
 
         Ok(Some(Call {
-            request: self.request.into_released(),
+            request: self.request,
             state: BodyState {
                 phase: Phase::RecvBody,
                 ..self.state

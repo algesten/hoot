@@ -26,6 +26,9 @@ pub struct RecvResponse(());
 #[doc(hidden)]
 pub struct RecvBody(());
 
+/// Max number of headers in an HTTP response
+pub const MAX_HEADERS: usize = 100;
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -117,7 +120,7 @@ mod test {
             assert_eq!(i, 0);
             let s = str::from_utf8(&output[..n]).unwrap();
             assert_eq!(s, "POST /page HTTP/1.1\r\n");
-            assert!(!call.is_after_body());
+            assert!(!call.request_finished());
         }
 
         {
@@ -125,7 +128,7 @@ mod test {
             assert_eq!(i, 0);
             let s = str::from_utf8(&output[..n]).unwrap();
             assert_eq!(s, "host: f.test\r\n");
-            assert!(!call.is_after_body());
+            assert!(!call.request_finished());
         }
 
         {
@@ -133,7 +136,7 @@ mod test {
             assert_eq!(i, 0);
             let s = str::from_utf8(&output[..n]).unwrap();
             assert_eq!(s, "content-length: 5\r\n");
-            assert!(!call.is_after_body());
+            assert!(!call.request_finished());
         }
 
         {
@@ -142,7 +145,7 @@ mod test {
             assert_eq!(i, 5);
             let s = str::from_utf8(&output[..n]).unwrap();
             assert_eq!(s, "hallo");
-            assert!(call.is_after_body());
+            assert!(call.request_finished());
         }
     }
 
@@ -187,7 +190,7 @@ mod test {
             "POST /page HTTP/1.1\r\nhost: f.test\r\ncontent-length: 5\r\nha"
         );
 
-        assert!(!call.is_after_body());
+        assert!(!call.request_finished());
 
         let (i, n2) = call.write(b"llo", &mut output).unwrap();
         assert_eq!(i, 3);
@@ -195,7 +198,7 @@ mod test {
 
         assert_eq!(s, "llo");
 
-        assert!(call.is_after_body());
+        assert!(call.request_finished());
     }
 
     #[test]

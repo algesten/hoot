@@ -1,4 +1,4 @@
-use http::{HeaderName, HeaderValue, Method, Request, Version};
+use http::{HeaderName, HeaderValue, Method, Request, StatusCode, Version};
 
 use crate::body::BodyWriter;
 use crate::util::compare_lowercase_ascii;
@@ -51,6 +51,17 @@ pub(crate) trait HeaderIterExt {
 impl<'a, I: Iterator<Item = (&'a HeaderName, &'a HeaderValue)>> HeaderIterExt for I {
     fn has(self, key: &str, value: &str) -> bool {
         self.filter(|i| i.0 == key).any(|i| i.1 == value)
+    }
+}
+
+pub(crate) trait StatusExt {
+    /// Detect 307/308 redirect
+    fn is_redirect_retaining_method(&self) -> bool;
+}
+
+impl StatusExt for StatusCode {
+    fn is_redirect_retaining_method(&self) -> bool {
+        *self == StatusCode::TEMPORARY_REDIRECT || *self == StatusCode::PERMANENT_REDIRECT
     }
 }
 

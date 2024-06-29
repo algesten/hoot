@@ -208,6 +208,13 @@ impl BodyReader {
     ) -> Result<Self, Error> {
         let is_success = (200..=299).contains(&status_code);
         let is_informational = (100..=199).contains(&status_code);
+        let is_redirect = (300..=399).contains(&status_code) && status_code != 304;
+
+        let header_defined = Self::header_defined(http10, header_lookup)?;
+
+        // Implicitly we know that CloseDelimited means no header indicated that
+        // there was a body.
+        let has_body_header = header_defined != Self::CloseDelimited;
 
         let has_no_body =
             // https://datatracker.ietf.org/doc/html/rfc2616#section-4.3
@@ -221,7 +228,10 @@ impl BodyReader {
             // All 1xx (informational), 204 (no content), and 304 (not modified) responses
             // MUST NOT include a message-body.
             is_informational ||
-            matches!(status_code, 204 | 304);
+            matches!(status_code, 204 | 304) ||
+            // Surprisingly, redirects may have a body. Whether they do we need to
+            // check the existence of content-length or transfer-encoding headers.
+            is_redirect && !has_body_header;
 
         if has_no_body {
             return Ok(Self::NoBody);
@@ -229,7 +239,7 @@ impl BodyReader {
 
         // https://datatracker.ietf.org/doc/html/rfc2616#section-4.3
         // All other responses do include a message-body, although it MAY be of zero length.
-        Self::header_defined(http10, header_lookup)
+        Ok(header_defined)
     }
 
     fn header_defined<'a>(

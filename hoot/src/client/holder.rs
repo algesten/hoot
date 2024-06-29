@@ -14,6 +14,7 @@ pub(crate) enum CallHolder<'a> {
     WithBody(Call<'a, WithBody>),
     RecvResponse(Call<'a, RecvResponse>),
     RecvBody(Call<'a, RecvBody>),
+    Empty,
 }
 
 impl<'a> CallHolder<'a> {
@@ -31,15 +32,52 @@ impl<'a> CallHolder<'a> {
             CallHolder::WithBody(v) => v.amended(),
             CallHolder::RecvResponse(v) => v.amended(),
             CallHolder::RecvBody(v) => v.amended(),
+            CallHolder::Empty => unreachable!(),
         }
     }
 
-    pub fn request_must(&mut self) -> &mut AmendedRequest<'a> {
+    pub fn request_mut(&mut self) -> &mut AmendedRequest<'a> {
         match self {
             CallHolder::WithoutBody(v) => v.amended_mut(),
             CallHolder::WithBody(v) => v.amended_mut(),
             CallHolder::RecvResponse(v) => v.amended_mut(),
             CallHolder::RecvBody(v) => v.amended_mut(),
+            CallHolder::Empty => unreachable!(),
+        }
+    }
+
+    pub fn as_with_body(&self) -> &Call<'a, WithBody> {
+        match self {
+            CallHolder::WithBody(v) => v,
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn as_with_body_mut(&mut self) -> &mut Call<'a, WithBody> {
+        match self {
+            CallHolder::WithBody(v) => v,
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn as_recv_response_mut(&mut self) -> &mut Call<'a, RecvResponse> {
+        match self {
+            CallHolder::RecvResponse(v) => v,
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn as_recv_body(&self) -> &Call<'a, RecvBody> {
+        match self {
+            CallHolder::RecvBody(v) => v,
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn as_recv_body_mut(&mut self) -> &mut Call<'a, RecvBody> {
+        match self {
+            CallHolder::RecvBody(v) => v,
+            _ => unreachable!(),
         }
     }
 }

@@ -56,6 +56,9 @@ pub enum Error {
     #[error("http parse fail: {0}")]
     HttpParseFail(String),
 
+    #[error("http parse resulted in too many headers")]
+    HttpParseTooManyHeaders,
+
     #[error("http response missing version")]
     MissingResponseVersion,
 
@@ -67,6 +70,18 @@ pub enum Error {
 
     #[error("must read http response before body")]
     IncompleteResponse,
+
+    #[error("missing a location header")]
+    NoLocationHeader,
+
+    #[error("location header is malformed")]
+    BadLocationHeader,
+
+    #[error("illegal redirect of request body")]
+    IllegalRedirectSendBody,
+
+    #[error("illegal redirect of DELETE method")]
+    IllegalRedirectDelete,
 }
 
 impl From<httparse::Error> for Error {
