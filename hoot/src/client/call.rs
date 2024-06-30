@@ -127,6 +127,12 @@ struct BodyState {
     reader: Option<BodyReader>,
 }
 
+impl BodyState {
+    fn need_response_body(&self) -> bool {
+        !matches!(self.reader, Some(BodyReader::NoBody))
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Phase {
     SendLine,
@@ -422,14 +428,24 @@ impl<'a> Call<'a, RecvResponse> {
             return Ok(None);
         }
 
-        Ok(Some(Call {
+        let next = self.do_into_body();
+
+        Ok(Some(next))
+    }
+
+    pub(crate) fn need_response_body(&self) -> bool {
+        self.state.need_response_body()
+    }
+
+    pub(crate) fn do_into_body(self) -> Call<'a, RecvBody> {
+        Call {
             request: self.request,
             state: BodyState {
                 phase: Phase::RecvBody,
                 ..self.state
             },
             _ph: PhantomData,
-        }))
+        }
     }
 }
 

@@ -1,5 +1,6 @@
 use http::{HeaderName, HeaderValue, Method, Request, Uri, Version};
 use smallvec::SmallVec;
+use url::Url;
 
 use crate::Error;
 
@@ -122,24 +123,11 @@ impl<'a> AmendedRequest<'a> {
     }
 
     pub fn new_uri_from_location(&self, location: &str) -> Result<Uri, Error> {
-        let base = self.uri();
+        let base = Url::parse(&self.uri().to_string()).expect("base uri to be a url");
 
-        // Parse the Location: header to a uri. This handles relative
-        // uri as well as absolute.
-        let mut parts = location
-            .parse::<Uri>()
-            .map_err(|_| Error::BadLocationHeader)?
-            .into_parts();
+        let url = base.join(location).map_err(|_| Error::BadLocationHeader)?;
 
-        if parts.scheme.is_none() {
-            parts.scheme = Some(base.scheme().cloned().expect("base scheme"));
-        }
-
-        if parts.authority.is_none() {
-            parts.authority = Some(base.authority().cloned().expect("base authority"));
-        }
-
-        let uri = Uri::from_parts(parts).expect("valid uri from parts");
+        let uri = url.to_string().parse::<Uri>().expect("new uri to parse");
 
         Ok(uri)
     }

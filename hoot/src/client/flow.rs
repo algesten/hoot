@@ -307,7 +307,13 @@ impl<'a> Flow<'a, RecvResponse> {
         }
 
         self.inner.status = Some(response.status());
-        self.inner.location = response.headers().get("location").cloned();
+        // We want the last Location header.
+        self.inner.location = response
+            .headers()
+            .get_all("location")
+            .into_iter()
+            .last()
+            .cloned();
 
         if response.headers().iter().has("connection", "close") {
             self.inner
@@ -330,10 +336,10 @@ impl<'a> Flow<'a, RecvResponse> {
             _ => unreachable!(),
         };
 
-        // unwrap here is ok because we check can_proceed() above.
-        let maybe_call_body = call_body.into_body().unwrap();
+        let has_response_body = call_body.need_response_body();
+        let call_body = call_body.do_into_body();
 
-        if let Some(call_body) = maybe_call_body {
+        if has_response_body {
             if call_body.is_close_delimited() {
                 self.inner
                     .close_reason
@@ -344,8 +350,7 @@ impl<'a> Flow<'a, RecvResponse> {
 
             RecvResponseResult::RecvBody(Flow::wrap(self.inner))
         } else {
-            let call_empty = CallHolder::Empty;
-            self.inner.call = call_empty;
+            self.inner.call = CallHolder::RecvBody(call_body);
 
             if self.inner.is_redirect() {
                 RecvResponseResult::Redirect(Flow::wrap(self.inner))

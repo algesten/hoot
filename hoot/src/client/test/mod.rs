@@ -12,6 +12,8 @@ mod state_await_100;
 
 mod state_recv_body;
 
+mod state_redirect;
+
 trait TestSliceExt {
     fn as_str(&self) -> &str;
 }

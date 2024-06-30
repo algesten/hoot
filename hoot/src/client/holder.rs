@@ -14,7 +14,6 @@ pub(crate) enum CallHolder<'a> {
     WithBody(Call<'a, WithBody>),
     RecvResponse(Call<'a, RecvResponse>),
     RecvBody(Call<'a, RecvBody>),
-    Empty,
 }
 
 impl<'a> CallHolder<'a> {
@@ -32,7 +31,6 @@ impl<'a> CallHolder<'a> {
             CallHolder::WithBody(v) => v.amended(),
             CallHolder::RecvResponse(v) => v.amended(),
             CallHolder::RecvBody(v) => v.amended(),
-            CallHolder::Empty => unreachable!(),
         }
     }
 
@@ -42,7 +40,6 @@ impl<'a> CallHolder<'a> {
             CallHolder::WithBody(v) => v.amended_mut(),
             CallHolder::RecvResponse(v) => v.amended_mut(),
             CallHolder::RecvBody(v) => v.amended_mut(),
-            CallHolder::Empty => unreachable!(),
         }
     }
 

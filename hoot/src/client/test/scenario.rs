@@ -1,20 +1,21 @@
 use std::io::Write;
 use std::marker::PhantomData;
 
-use http::{Request, Response};
+use http::{Request, Response, StatusCode};
 
 use crate::client::flow::state::{
-    Await100, Prepare, RecvBody, RecvResponse, SendBody, SendRequest,
+    Await100, Prepare, RecvBody, RecvResponse, Redirect, SendBody, SendRequest,
 };
 use crate::client::flow::{Await100Result, SendRequestResult};
-use crate::client::results::RecvResponseResult;
+use crate::client::results::{RecvBodyResult, RecvResponseResult};
 use crate::client::Flow;
 
 pub struct Scenario {
     request: Request<()>,
     headers_amend: Vec<(String, String)>,
+    send_body: Vec<u8>,
     response: Response<()>,
-    body: Vec<u8>,
+    recv_body: Vec<u8>,
 }
 
 impl Scenario {
@@ -94,7 +95,7 @@ impl Scenario {
                 }
             };
 
-            let mut input = &self.body[..];
+            let mut input = &self.send_body[..];
             let mut output = vec![0; 1024];
 
             while !input.is_empty() {
@@ -116,25 +117,7 @@ impl Scenario {
     pub fn to_recv_body(&self) -> Flow<RecvBody> {
         let mut state = self.to_recv_response();
 
-        let mut input = Vec::<u8>::new();
-
-        let r = &self.response;
-        let s = r.status();
-
-        write!(
-            &mut input,
-            "{:?} {} {}\r\n",
-            r.version(),
-            s.as_u16(),
-            s.canonical_reason().unwrap()
-        )
-        .unwrap();
-
-        for (k, v) in r.headers().iter() {
-            write!(&mut input, "{}: {}\r\n", k.as_str(), v.to_str().unwrap()).unwrap();
-        }
-
-        write!(&mut input, "\r\n").unwrap();
+        let input = write_response(&self.response);
 
         // use crate::client::test::TestSliceExt;
         // println!("{:?}", input.as_slice().as_str());
@@ -146,18 +129,66 @@ impl Scenario {
             _ => unreachable!("Incorrect scenario not leading to_recv_body()"),
         }
     }
+
+    pub fn to_redirect(&self) -> Flow<Redirect> {
+        let mut state = self.to_recv_response();
+
+        let input = write_response(&self.response);
+
+        state.try_response(&input).unwrap();
+
+        match state.proceed() {
+            RecvResponseResult::Redirect(v) => v,
+            RecvResponseResult::RecvBody(mut state) => {
+                let mut output = vec![0; 1024];
+
+                state.read(&self.recv_body, &mut output).unwrap();
+
+                match state.proceed() {
+                    RecvBodyResult::Redirect(v) => v,
+                    _ => unreachable!("Incorrect scenario not leading to_redirect()"),
+                }
+            }
+            _ => unreachable!("Incorrect scenario not leading to_redirect()"),
+        }
+    }
+}
+
+fn write_response(r: &Response<()>) -> Vec<u8> {
+    let mut input = Vec::<u8>::new();
+
+    let s = r.status();
+
+    write!(
+        &mut input,
+        "{:?} {} {}\r\n",
+        r.version(),
+        s.as_u16(),
+        s.canonical_reason().unwrap()
+    )
+    .unwrap();
+
+    for (k, v) in r.headers().iter() {
+        write!(&mut input, "{}: {}\r\n", k.as_str(), v.to_str().unwrap()).unwrap();
+    }
+
+    write!(&mut input, "\r\n").unwrap();
+
+    input
 }
 
 #[derive(Default)]
 pub struct ScenarioBuilder<T> {
     request: Request<()>,
     headers_amend: Vec<(String, String)>,
-    body: Vec<u8>,
+    send_body: Vec<u8>,
     response: Response<()>,
+    recv_body: Vec<u8>,
     _ph: PhantomData<T>,
 }
 
 pub struct WithReq(());
+pub struct WithRes(());
 
 #[allow(unused)]
 impl ScenarioBuilder<()> {
@@ -169,8 +200,9 @@ impl ScenarioBuilder<()> {
         ScenarioBuilder {
             request,
             headers_amend: self.headers_amend,
-            body: vec![],
+            send_body: vec![],
             response: Response::default(),
+            recv_body: vec![],
             _ph: PhantomData,
         }
     }
@@ -221,13 +253,15 @@ impl ScenarioBuilder<WithReq> {
         self
     }
 
-    pub fn body<B: AsRef<[u8]>>(mut self, body: B, chunked: bool) -> Self {
-        self.body = body.as_ref().to_vec();
+    pub fn send_body<B: AsRef<[u8]>>(mut self, body: B, chunked: bool) -> Self {
+        let body = body.as_ref().to_vec();
+        let len = body.len();
+        self.send_body = body;
 
         let (k, v) = if chunked {
             ("transfer-encoding".to_string(), "chunked".to_string())
         } else {
-            ("content-length".to_string(), self.body.len().to_string())
+            ("content-length".to_string(), len.to_string())
         };
 
         self.headers_amend.push((k, v));
@@ -235,17 +269,69 @@ impl ScenarioBuilder<WithReq> {
         self
     }
 
-    pub fn response(mut self, response: Response<()>) -> Self {
-        self.response = response;
+    pub fn redirect(self, status: StatusCode, location: &str) -> ScenarioBuilder<WithRes> {
+        let r = Response::builder()
+            .status(status)
+            .header("location", location)
+            .body(())
+            .unwrap();
+        self.response(r)
+    }
+
+    pub fn response(mut self, response: Response<()>) -> ScenarioBuilder<WithRes> {
+        let ScenarioBuilder {
+            request,
+            headers_amend,
+            send_body,
+            recv_body,
+            ..
+        } = self;
+
+        ScenarioBuilder {
+            request,
+            headers_amend,
+            send_body,
+            response,
+            recv_body,
+            _ph: PhantomData,
+        }
+    }
+
+    pub fn build(self) -> Scenario {
+        Scenario {
+            request: self.request,
+            send_body: self.send_body,
+            headers_amend: self.headers_amend,
+            response: self.response,
+            recv_body: self.recv_body,
+        }
+    }
+}
+
+impl ScenarioBuilder<WithRes> {
+    pub fn recv_body<B: AsRef<[u8]>>(mut self, body: B, chunked: bool) -> Self {
+        let body = body.as_ref().to_vec();
+        let len = body.len();
+        self.recv_body = body;
+
+        let (k, v) = if chunked {
+            ("transfer-encoding", "chunked".to_string())
+        } else {
+            ("content-length", len.to_string())
+        };
+
+        self.response.headers_mut().append(k, v.try_into().unwrap());
+
         self
     }
 
     pub fn build(self) -> Scenario {
         Scenario {
             request: self.request,
-            body: self.body,
+            send_body: self.send_body,
             headers_amend: self.headers_amend,
             response: self.response,
+            recv_body: self.recv_body,
         }
     }
 }
