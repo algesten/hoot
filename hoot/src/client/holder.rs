@@ -60,6 +60,13 @@ impl<'a> CallHolder<'a> {
         }
     }
 
+    pub fn as_recv_response(&self) -> &Call<'a, RecvResponse> {
+        match self {
+            CallHolder::RecvResponse(v) => v,
+            _ => unreachable!(),
+        }
+    }
+
     pub fn as_recv_response_mut(&mut self) -> &mut Call<'a, RecvResponse> {
         match self {
             CallHolder::RecvResponse(v) => v,

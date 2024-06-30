@@ -178,7 +178,7 @@ impl<'a> Call<'a, WithoutBody> {
         Ok(output_used)
     }
 
-    pub fn request_finished(&self) -> bool {
+    pub fn is_finished(&self) -> bool {
         !self.state.phase.is_prelude()
     }
 
@@ -263,7 +263,7 @@ impl<'a> Call<'a, WithBody> {
         self.state.phase.is_body()
     }
 
-    pub fn request_finished(&self) -> bool {
+    pub fn is_finished(&self) -> bool {
         self.state.writer.is_ended()
     }
 
@@ -391,6 +391,10 @@ impl<'a> Call<'a, RecvResponse> {
         self.state.reader = Some(recv_body_mode);
 
         Ok(Some((input_used, response)))
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.state.reader.is_some()
     }
 
     /// Continue reading the response body
@@ -569,7 +573,7 @@ mod test {
             assert_eq!(i, 0);
             let s = str::from_utf8(&output[..n]).unwrap();
             assert_eq!(s, "POST /page HTTP/1.1\r\n");
-            assert!(!call.request_finished());
+            assert!(!call.is_finished());
         }
 
         {
@@ -577,7 +581,7 @@ mod test {
             assert_eq!(i, 0);
             let s = str::from_utf8(&output[..n]).unwrap();
             assert_eq!(s, "host: f.test\r\n");
-            assert!(!call.request_finished());
+            assert!(!call.is_finished());
         }
 
         {
@@ -585,7 +589,7 @@ mod test {
             assert_eq!(i, 0);
             let s = str::from_utf8(&output[..n]).unwrap();
             assert_eq!(s, "content-length: 5\r\n\r\n");
-            assert!(!call.request_finished());
+            assert!(!call.is_finished());
         }
 
         {
@@ -594,7 +598,7 @@ mod test {
             assert_eq!(i, 5);
             let s = str::from_utf8(&output[..n]).unwrap();
             assert_eq!(s, "hallo");
-            assert!(call.request_finished());
+            assert!(call.is_finished());
         }
     }
 
@@ -639,7 +643,7 @@ mod test {
             "POST /page HTTP/1.1\r\nhost: f.test\r\ncontent-length: 5\r\n\r\nha"
         );
 
-        assert!(!call.request_finished());
+        assert!(!call.is_finished());
 
         let (i, n2) = call.write(b"llo", &mut output).unwrap();
         assert_eq!(i, 3);
@@ -647,7 +651,7 @@ mod test {
 
         assert_eq!(s, "llo");
 
-        assert!(call.request_finished());
+        assert!(call.is_finished());
     }
 
     #[test]

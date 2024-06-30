@@ -27,13 +27,14 @@ pub struct State<'a, State> {
     _ph: PhantomData<State>,
 }
 
-struct Inner<'a> {
-    call: CallHolder<'a>,
-    close_reason: SmallVec<[CloseReason; 4]>,
-    should_send_body: bool,
-    await_100_continue: bool,
-    status: Option<StatusCode>,
-    location: Option<HeaderValue>,
+// pub(crate) for tests to inspect state
+pub(crate) struct Inner<'a> {
+    pub call: CallHolder<'a>,
+    pub close_reason: SmallVec<[CloseReason; 4]>,
+    pub should_send_body: bool,
+    pub await_100_continue: bool,
+    pub status: Option<StatusCode>,
+    pub location: Option<HeaderValue>,
 }
 
 impl Inner<'_> {
@@ -69,6 +70,11 @@ impl<'a, S> State<'a, S> {
 
     fn call_mut(&mut self) -> &mut CallHolder<'a> {
         &mut self.inner.call
+    }
+
+    #[cfg(test)]
+    pub(crate) fn inner(&self) -> &Inner<'a> {
+        &self.inner
     }
 }
 
@@ -136,13 +142,13 @@ impl<'a> State<'a, SendRequest> {
 
     pub fn can_proceed(&self) -> bool {
         match &self.inner.call {
-            CallHolder::WithoutBody(v) => v.request_finished(),
+            CallHolder::WithoutBody(v) => v.is_finished(),
             CallHolder::WithBody(v) => v.is_body(),
             _ => unreachable!(),
         }
     }
 
-    pub fn proceed(self) -> SendRequestResult<'a> {
+    pub fn proceed(mut self) -> SendRequestResult<'a> {
         assert!(self.can_proceed(), "SendRequest cannot proceed");
 
         if self.inner.should_send_body {
@@ -152,6 +158,18 @@ impl<'a> State<'a, SendRequest> {
                 SendRequestResult::SendBody(State::wrap(self.inner))
             }
         } else {
+            let call = match self.inner.call {
+                CallHolder::WithoutBody(v) => v,
+                _ => unreachable!(),
+            };
+
+            // unwrap here is ok because self.can_proceed() should check the necessary
+            // error conditions that would prevent us from converting.
+            let call_recv = call.into_receive().unwrap();
+
+            let call = CallHolder::RecvResponse(call_recv);
+            self.inner.call = call;
+
             SendRequestResult::RecvResponse(State::wrap(self.inner))
         }
     }
@@ -241,7 +259,7 @@ impl<'a> State<'a, SendBody> {
     }
 
     pub fn can_proceed(&self) -> bool {
-        self.inner.call.as_with_body().request_finished()
+        self.inner.call.as_with_body().is_finished()
     }
 
     pub fn proceed(mut self) -> State<'a, RecvResponse> {
@@ -302,14 +320,19 @@ impl<'a> State<'a, RecvResponse> {
         Ok((input_used, Some(response)))
     }
 
+    pub fn can_proceed(&self) -> bool {
+        self.inner.call.as_recv_response().is_finished()
+    }
+
     pub fn proceed(mut self) -> RecvResponseResult<'a> {
+        assert!(self.can_proceed(), "RecvResponse cannot proceed");
+
         let call_body = match self.inner.call {
             CallHolder::RecvResponse(v) => v,
             _ => unreachable!(),
         };
 
-        // unwrap here is ok because it's a fault to call proceed() before
-        // try_response() returns Some((x, Response))
+        // unwrap here is ok because we check can_proceed() above.
         let maybe_call_body = call_body.into_body().unwrap();
 
         if let Some(call_body) = maybe_call_body {

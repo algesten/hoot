@@ -102,6 +102,17 @@ impl<'a> AmendedRequest<'a> {
         self.headers().count()
     }
 
+    #[cfg(test)]
+    pub fn headers_vec(&self) -> Vec<(&str, &str)> {
+        self.headers()
+            // unwrap here is ok because the tests using this method should
+            // only use header values representable as utf-8.
+            // If we want to test non-utf8 header values, use .headers()
+            // iterator instead.
+            .map(|(k, v)| (k.as_str(), v.to_str().unwrap()))
+            .collect()
+    }
+
     pub fn set_method(&mut self, method: Method) {
         self.method = method;
     }

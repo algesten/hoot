@@ -240,6 +240,9 @@ mod amended;
 
 mod holder;
 
+#[cfg(test)]
+mod test;
+
 /// Type state for requests without bodies via [`Call::without_body()`]
 #[doc(hidden)]
 pub struct WithoutBody(());
