@@ -243,6 +243,8 @@ mod holder;
 #[cfg(test)]
 mod test;
 
+// TODO(martin): let's move these type states somewhere more relevant.
+
 /// Type state for requests without bodies via [`Call::without_body()`]
 #[doc(hidden)]
 pub struct WithoutBody(());

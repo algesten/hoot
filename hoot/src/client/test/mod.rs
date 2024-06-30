@@ -1,12 +1,12 @@
 mod scenario;
 
-mod test_prepare;
+mod state_prepare;
 
-mod test_send_request;
+mod state_send_request;
 
-mod test_send_body;
+mod state_send_body;
 
-mod test_recv_response;
+mod state_recv_response;
 
 trait TestSliceExt {
     fn as_str(&self) -> &str;

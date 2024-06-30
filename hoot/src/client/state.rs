@@ -10,6 +10,8 @@ use crate::Error;
 
 use super::holder::CallHolder;
 
+// TODO(martin): everything is a "state" – let's find better names at least for the struct `State`.
+
 pub mod state {
     pub struct Prepare(());
     pub struct SendRequest(());
