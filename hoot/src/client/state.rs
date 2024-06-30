@@ -438,6 +438,8 @@ impl<'a> State<'a, Redirect> {
         request.set_uri(uri);
         request.set_method(new_method);
 
+        // TODO(martin): clear out unwanted headers
+
         Ok(next)
     }
 
