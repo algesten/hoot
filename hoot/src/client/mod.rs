@@ -3,8 +3,8 @@
 //! hoot is Sans-IO, which means "writing" and "reading" are made via buffers
 //! rather than the Write/Read std traits.
 //!
-//! The [`State`] object attempts to encode correct HTTP/1.1 handling using
-//! state variables, for example `State<'a, SendRequest>` to represent the
+//! The [`Flow`] object attempts to encode correct HTTP/1.1 handling using
+//! state variables, for example `Flow<'a, SendRequest>` to represent the
 //! lifecycle stage where we are to send the request.
 //!
 //! The states are:
@@ -58,7 +58,7 @@
 //! # Example
 //!
 //! ```
-//! use hoot::client::State;
+//! use hoot::client::Flow;
 //! use hoot::http::Request;
 //! use hoot::client::results::*;
 //!
@@ -70,14 +70,14 @@
 //!
 //! // ********************************** Prepare
 //!
-//! let mut state = State::new(&request).unwrap();
+//! let mut flow = Flow::new(&request).unwrap();
 //!
 //! // Prepare with state from cookie jar. The uri
 //! // is used to key the cookies.
-//! let uri = state.uri();
+//! let uri = flow.uri();
 //!
-//! // state.header("Cookie", "my_cookie1=value1");
-//! // state.header("Cookie", "my_cookie2=value2");
+//! // flow.header("Cookie", "my_cookie1=value1");
+//! // flow.header("Cookie", "my_cookie2=value2");
 //!
 //! // Obtain a connection for the uri, either a
 //! // pooled connection from a previous http/1.1
@@ -96,9 +96,9 @@
 //! // Proceed to the next state writing the request.
 //! // Hoot calls this the request method/path + headers
 //! // the "prelude".
-//! let mut state = state.proceed();
+//! let mut flow = flow.proceed();
 //!
-//! let output_used = state.write(&mut output).unwrap();
+//! let output_used = flow.write(&mut output).unwrap();
 //! assert_eq!(output_used, 107);
 //!
 //! assert_eq!(&output[..output_used], b"\
@@ -110,13 +110,13 @@
 //!     \r\n");
 //!
 //! // Check we can continue to send the body
-//! assert!(state.can_proceed());
+//! assert!(flow.can_proceed());
 //!
 //! // ********************************** Await100
 //!
 //! // In this example, we know the next state is Await100.
 //! // A real client needs to match on the variants.
-//! let mut state = match state.proceed() {
+//! let mut flow = match flow.proceed() {
 //!     SendRequestResult::Await100(v) => v,
 //!     _ => panic!(),
 //! };
@@ -127,26 +127,26 @@
 //!
 //! // This boolean can be checked whether there's any point
 //! // in keeping waiting for the timer to run out.
-//! assert!(state.can_keep_await_100());
+//! assert!(flow.can_keep_await_100());
 //!
 //! let input = b"HTTP/1.1 100 Continue\r\n\r\n";
-//! let input_used = state.try_read_100(input).unwrap().unwrap();
+//! let input_used = flow.try_read_100(input).unwrap().unwrap();
 //!
 //! assert_eq!(input_used, 25);
-//! assert!(!state.can_keep_await_100());
+//! assert!(!flow.can_keep_await_100());
 //!
 //! // ********************************** SendBody
 //!
 //! // Proceeding is possible regardless of whether the
 //! // can_keep_await_100() is true or false.
 //! // A real client needs to match on the variants.
-//! let mut state = match state.proceed() {
+//! let mut flow = match flow.proceed() {
 //!     Await100Result::SendBody(v) => v,
 //!     _ => panic!(),
 //! };
 //!
 //! let (input_used, o1) =
-//!     state.write(b"hello", &mut output).unwrap();
+//!     flow.write(b"hello", &mut output).unwrap();
 //!
 //! assert_eq!(input_used, 5);
 //!
@@ -154,9 +154,9 @@
 //! // the end of body must be signaled with
 //! // an empty input. This is also valid for
 //! // regular content-length body.
-//! assert!(!state.can_proceed());
+//! assert!(!flow.can_proceed());
 //!
-//! let (_, o2) = state.write(&[], &mut output[o1..]).unwrap();
+//! let (_, o2) = flow.write(&[], &mut output[o1..]).unwrap();
 //!
 //! let output_used = o1 + o2;
 //! assert_eq!(output_used, 15);
@@ -168,12 +168,12 @@
 //!     0\r\n\
 //!     \r\n");
 //!
-//! assert!(state.can_proceed());
+//! assert!(flow.can_proceed());
 //!
 //! // ********************************** RecvRequest
 //!
 //! // Proceed to read the request.
-//! let mut state = state.proceed();
+//! let mut flow = flow.proceed();
 //!
 //! let part = b"HTTP/1.1 200 OK\r\nContent-Len";
 //! let full = b"HTTP/1.1 200 OK\r\nContent-Length: 9\r\n\r\n";
@@ -182,13 +182,13 @@
 //! // get enough content that is both a prelude and
 //! // all headers.
 //! let (input_used, maybe_response) =
-//!     state.try_response(part).unwrap();
+//!     flow.try_response(part).unwrap();
 //!
 //! assert_eq!(input_used, 0);
 //! assert!(maybe_response.is_none());
 //!
 //! let (input_used, maybe_response) =
-//!     state.try_response(full).unwrap();
+//!     flow.try_response(full).unwrap();
 //!
 //! assert_eq!(input_used, 38);
 //! let response = maybe_response.unwrap();
@@ -197,13 +197,13 @@
 //!
 //! // It's not possible to proceed until we
 //! // have read a response.
-//! let mut state = match state.proceed() {
+//! let mut flow = match flow.proceed() {
 //!     RecvResponseResult::RecvBody(v) => v,
 //!     _ => panic!(),
 //! };
 //!
 //! let(input_used, output_used) =
-//!     state.read(b"hi there!", &mut output).unwrap();
+//!     flow.read(b"hi there!", &mut output).unwrap();
 //!
 //! assert_eq!(input_used, 9);
 //! assert_eq!(output_used, 9);
@@ -212,12 +212,12 @@
 //!
 //! // ********************************** Cleanup
 //!
-//! let state = match state.proceed() {
+//! let flow = match flow.proceed() {
 //!     RecvBodyResult::Cleanup(v) => v,
 //!     _ => panic!(),
 //! };
 //!
-//! if state.must_close_connection() {
+//! if flow.must_close_connection() {
 //!     // connection.close();
 //! } else {
 //!     // connection.return_to_pool();
@@ -228,12 +228,12 @@
 mod call;
 pub use call::Call;
 
-mod state;
-pub use state::{CloseReason, State};
+mod flow;
+pub use flow::{CloseReason, Flow};
 
 pub mod results {
-    pub use super::state::{Await100Result, RecvBodyResult};
-    pub use super::state::{RecvResponseResult, SendRequestResult};
+    pub use super::flow::{Await100Result, RecvBodyResult};
+    pub use super::flow::{RecvResponseResult, SendRequestResult};
 }
 
 mod amended;

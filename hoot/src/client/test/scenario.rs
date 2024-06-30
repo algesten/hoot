@@ -2,9 +2,9 @@ use std::marker::PhantomData;
 
 use http::Request;
 
-use crate::client::state::state::{Prepare, RecvResponse, SendBody, SendRequest};
-use crate::client::state::{Await100Result, SendRequestResult};
-use crate::client::State;
+use crate::client::flow::state::{Prepare, RecvResponse, SendBody, SendRequest};
+use crate::client::flow::{Await100Result, SendRequestResult};
+use crate::client::Flow;
 
 pub struct Scenario<B> {
     request: Request<()>,
@@ -19,59 +19,59 @@ impl Scenario<()> {
 }
 
 impl<B: AsRef<[u8]>> Scenario<B> {
-    pub fn to_prepare(&self) -> State<Prepare> {
+    pub fn to_prepare(&self) -> Flow<Prepare> {
         // The unwraps here are ok because the user is not supposed to
         // construct tests that test the Scenario builder itself.
-        let mut state = State::new(&self.request).unwrap();
+        let mut flow = Flow::new(&self.request).unwrap();
 
         for (key, value) in &self.headers_amend {
-            state.header(key, value).unwrap();
+            flow.header(key, value).unwrap();
         }
 
-        state
+        flow
     }
 
-    pub fn to_send_request(&self) -> State<SendRequest> {
-        let state = self.to_prepare();
+    pub fn to_send_request(&self) -> Flow<SendRequest> {
+        let flow = self.to_prepare();
 
-        let state = state.proceed();
+        let flow = flow.proceed();
 
-        state
+        flow
     }
 
-    pub fn to_send_body(&self) -> State<SendBody> {
-        let mut state = self.to_send_request();
+    pub fn to_send_body(&self) -> Flow<SendBody> {
+        let mut flow = self.to_send_request();
 
         // Write the prelude and discard
-        state.write(&mut vec![0; 1024]).unwrap();
+        flow.write(&mut vec![0; 1024]).unwrap();
 
-        match state.proceed() {
+        match flow.proceed() {
             SendRequestResult::SendBody(v) => v,
             _ => unreachable!("Incorrect scenario not leading to_send_body()"),
         }
     }
 
-    pub fn to_recv_response(&self) -> State<RecvResponse> {
-        let mut state = self.to_send_request();
+    pub fn to_recv_response(&self) -> Flow<RecvResponse> {
+        let mut flow = self.to_send_request();
 
         // Write the prelude and discard
-        state.write(&mut vec![0; 1024]).unwrap();
+        flow.write(&mut vec![0; 1024]).unwrap();
 
-        if state.inner().should_send_body {
-            let mut state = if state.inner().await_100_continue {
+        if flow.inner().should_send_body {
+            let mut flow = if flow.inner().await_100_continue {
                 // Go via Await100
-                let state = match state.proceed() {
+                let flow = match flow.proceed() {
                     SendRequestResult::Await100(v) => v,
                     _ => unreachable!(),
                 };
 
                 // Proceed straight out of Await100
-                match state.proceed() {
+                match flow.proceed() {
                     Await100Result::SendBody(v) => v,
                     _ => unreachable!(),
                 }
             } else {
-                match state.proceed() {
+                match flow.proceed() {
                     SendRequestResult::SendBody(v) => v,
                     _ => unreachable!(),
                 }
@@ -81,15 +81,15 @@ impl<B: AsRef<[u8]>> Scenario<B> {
             let mut output = vec![0; 1024];
 
             while !input.is_empty() {
-                let (input_used, _) = state.write(input, &mut output).unwrap();
+                let (input_used, _) = flow.write(input, &mut output).unwrap();
                 input = &input[input_used..];
             }
 
-            state.write(&[], &mut output).unwrap();
+            flow.write(&[], &mut output).unwrap();
 
-            state.proceed()
+            flow.proceed()
         } else {
-            match state.proceed() {
+            match flow.proceed() {
                 SendRequestResult::RecvResponse(v) => v,
                 _ => unreachable!(),
             }

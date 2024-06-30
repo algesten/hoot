@@ -4,26 +4,26 @@ use super::scenario::Scenario;
 fn proceed_without_amended_headers() {
     let scenario = Scenario::builder().get("https://q.test").build();
 
-    let state = scenario.to_prepare();
+    let flow = scenario.to_prepare();
 
-    let inner = state.inner();
+    let inner = flow.inner();
     let request = inner.call.request();
 
     assert_eq!(request.headers_vec(), [("host", "q.test")]);
 
-    state.proceed();
+    flow.proceed();
 }
 
 #[test]
 fn proceed_with_amended_headers() {
     let scenario = Scenario::builder().get("https://q.test").build();
 
-    let mut state = scenario.to_prepare();
+    let mut flow = scenario.to_prepare();
 
-    state.header("Cookie", "name=bar").unwrap();
-    state.header("Cookie", "name2=baz").unwrap();
+    flow.header("Cookie", "name=bar").unwrap();
+    flow.header("Cookie", "name2=baz").unwrap();
 
-    let inner = state.inner();
+    let inner = flow.inner();
     let request = inner.call.request();
 
     assert_eq!(
@@ -36,5 +36,5 @@ fn proceed_with_amended_headers() {
         ]
     );
 
-    state.proceed();
+    flow.proceed();
 }

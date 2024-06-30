@@ -14,21 +14,21 @@ fn receive_incomplete_response() {
     // -1 to never reach the end
     for i in 0..RESPONSE.len() - 1 {
         let scenario = Scenario::builder().get("https://q.test").build();
-        let mut state = scenario.to_recv_response();
+        let mut flow = scenario.to_recv_response();
 
-        let (input_used, maybe_response) = state.try_response(&RESPONSE[..i]).unwrap();
+        let (input_used, maybe_response) = flow.try_response(&RESPONSE[..i]).unwrap();
         assert_eq!(input_used, 0);
         assert!(maybe_response.is_none());
-        assert!(!state.can_proceed());
+        assert!(!flow.can_proceed());
     }
 }
 
 #[test]
 fn receive_complete_response() {
     let scenario = Scenario::builder().get("https://q.test").build();
-    let mut state = scenario.to_recv_response();
+    let mut flow = scenario.to_recv_response();
 
-    let (input_used, maybe_response) = state.try_response(&RESPONSE).unwrap();
+    let (input_used, maybe_response) = flow.try_response(&RESPONSE).unwrap();
     assert_eq!(input_used, 66);
     assert!(maybe_response.is_some());
 
@@ -42,5 +42,5 @@ fn receive_complete_response() {
         "text/plain"
     );
 
-    assert!(state.can_proceed());
+    assert!(flow.can_proceed());
 }

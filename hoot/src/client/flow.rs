@@ -10,8 +10,6 @@ use crate::Error;
 
 use super::holder::CallHolder;
 
-// TODO(martin): everything is a "state" – let's find better names at least for the struct `State`.
-
 pub mod state {
     pub struct Prepare(());
     pub struct SendRequest(());
@@ -24,7 +22,7 @@ pub mod state {
 }
 use self::state::*;
 
-pub struct State<'a, State> {
+pub struct Flow<'a, State> {
     inner: Inner<'a>,
     _ph: PhantomData<State>,
 }
@@ -58,9 +56,9 @@ pub enum CloseReason {
     Not100Continue,
 }
 
-impl<'a, S> State<'a, S> {
-    fn wrap(inner: Inner<'a>) -> State<'a, S> {
-        State {
+impl<'a, S> Flow<'a, S> {
+    fn wrap(inner: Inner<'a>) -> Flow<'a, S> {
+        Flow {
             inner,
             _ph: PhantomData,
         }
@@ -82,7 +80,7 @@ impl<'a, S> State<'a, S> {
 
 // //////////////////////////////////////////////////////////////////////////////////////////// PREPARE
 
-impl<'a> State<'a, Prepare> {
+impl<'a> Flow<'a, Prepare> {
     pub fn new(request: &'a Request<()>) -> Result<Self, Error> {
         let call = CallHolder::new(request)?;
 
@@ -109,7 +107,7 @@ impl<'a> State<'a, Prepare> {
             location: None,
         };
 
-        Ok(State::wrap(inner))
+        Ok(Flow::wrap(inner))
     }
 
     pub fn uri(&self) -> &Uri {
@@ -126,14 +124,14 @@ impl<'a> State<'a, Prepare> {
         self.call_mut().request_mut().set_header(key, value)
     }
 
-    pub fn proceed(self) -> State<'a, SendRequest> {
-        State::wrap(self.inner)
+    pub fn proceed(self) -> Flow<'a, SendRequest> {
+        Flow::wrap(self.inner)
     }
 }
 
 // //////////////////////////////////////////////////////////////////////////////////////////// SEND REQUEST
 
-impl<'a> State<'a, SendRequest> {
+impl<'a> Flow<'a, SendRequest> {
     pub fn write(&mut self, output: &mut [u8]) -> Result<usize, Error> {
         match &mut self.inner.call {
             CallHolder::WithoutBody(v) => v.write(output),
@@ -155,9 +153,9 @@ impl<'a> State<'a, SendRequest> {
 
         if self.inner.should_send_body {
             if self.inner.await_100_continue {
-                SendRequestResult::Await100(State::wrap(self.inner))
+                SendRequestResult::Await100(Flow::wrap(self.inner))
             } else {
-                SendRequestResult::SendBody(State::wrap(self.inner))
+                SendRequestResult::SendBody(Flow::wrap(self.inner))
             }
         } else {
             let call = match self.inner.call {
@@ -172,20 +170,20 @@ impl<'a> State<'a, SendRequest> {
             let call = CallHolder::RecvResponse(call_recv);
             self.inner.call = call;
 
-            SendRequestResult::RecvResponse(State::wrap(self.inner))
+            SendRequestResult::RecvResponse(Flow::wrap(self.inner))
         }
     }
 }
 
 pub enum SendRequestResult<'a> {
-    Await100(State<'a, Await100>),
-    SendBody(State<'a, SendBody>),
-    RecvResponse(State<'a, RecvResponse>),
+    Await100(Flow<'a, Await100>),
+    SendBody(Flow<'a, SendBody>),
+    RecvResponse(Flow<'a, RecvResponse>),
 }
 
 // //////////////////////////////////////////////////////////////////////////////////////////// AWAIT 100
 
-impl<'a> State<'a, Await100> {
+impl<'a> Flow<'a, Await100> {
     pub fn try_read_100(&mut self, input: &[u8]) -> Result<Option<usize>, Error> {
         // Try parsing a status line without any headers. The line we are looking for is:
         //
@@ -241,21 +239,21 @@ impl<'a> State<'a, Await100> {
         // We can always proceed out of Await100
 
         if self.inner.should_send_body {
-            Await100Result::SendBody(State::wrap(self.inner))
+            Await100Result::SendBody(Flow::wrap(self.inner))
         } else {
-            Await100Result::RecvResponse(State::wrap(self.inner))
+            Await100Result::RecvResponse(Flow::wrap(self.inner))
         }
     }
 }
 
 pub enum Await100Result<'a> {
-    SendBody(State<'a, SendBody>),
-    RecvResponse(State<'a, RecvResponse>),
+    SendBody(Flow<'a, SendBody>),
+    RecvResponse(Flow<'a, RecvResponse>),
 }
 
 // //////////////////////////////////////////////////////////////////////////////////////////// SEND BODY
 
-impl<'a> State<'a, SendBody> {
+impl<'a> Flow<'a, SendBody> {
     pub fn write(&mut self, input: &[u8], output: &mut [u8]) -> Result<(usize, usize), Error> {
         self.inner.call.as_with_body_mut().write(input, output)
     }
@@ -264,7 +262,7 @@ impl<'a> State<'a, SendBody> {
         self.inner.call.as_with_body().is_finished()
     }
 
-    pub fn proceed(mut self) -> State<'a, RecvResponse> {
+    pub fn proceed(mut self) -> Flow<'a, RecvResponse> {
         assert!(self.can_proceed(), "SendBody cannot proceed");
 
         let call_body = match self.inner.call {
@@ -279,13 +277,13 @@ impl<'a> State<'a, SendBody> {
         let call = CallHolder::RecvResponse(call_recv);
         self.inner.call = call;
 
-        State::wrap(self.inner)
+        Flow::wrap(self.inner)
     }
 }
 
 // //////////////////////////////////////////////////////////////////////////////////////////// RECV RESPONSE
 
-impl<'a> State<'a, RecvResponse> {
+impl<'a> Flow<'a, RecvResponse> {
     pub fn try_response(&mut self, input: &[u8]) -> Result<(usize, Option<Response<()>>), Error> {
         let maybe_response = self.inner.call.as_recv_response_mut().try_response(input)?;
 
@@ -339,29 +337,29 @@ impl<'a> State<'a, RecvResponse> {
 
         if let Some(call_body) = maybe_call_body {
             self.inner.call = CallHolder::RecvBody(call_body);
-            RecvResponseResult::RecvBody(State::wrap(self.inner))
+            RecvResponseResult::RecvBody(Flow::wrap(self.inner))
         } else {
             let call_empty = CallHolder::Empty;
             self.inner.call = call_empty;
 
             if self.inner.is_redirect() {
-                RecvResponseResult::Redirect(State::wrap(self.inner))
+                RecvResponseResult::Redirect(Flow::wrap(self.inner))
             } else {
-                RecvResponseResult::Cleanup(State::wrap(self.inner))
+                RecvResponseResult::Cleanup(Flow::wrap(self.inner))
             }
         }
     }
 }
 
 pub enum RecvResponseResult<'a> {
-    RecvBody(State<'a, RecvBody>),
-    Redirect(State<'a, Redirect>),
-    Cleanup(State<'a, Cleanup>),
+    RecvBody(Flow<'a, RecvBody>),
+    Redirect(Flow<'a, Redirect>),
+    Cleanup(Flow<'a, Cleanup>),
 }
 
 // //////////////////////////////////////////////////////////////////////////////////////////// RECV BODY
 
-impl<'a> State<'a, RecvBody> {
+impl<'a> Flow<'a, RecvBody> {
     pub fn read(&mut self, input: &[u8], output: &mut [u8]) -> Result<(usize, usize), Error> {
         self.inner.call.as_recv_body_mut().read(input, output)
     }
@@ -374,22 +372,22 @@ impl<'a> State<'a, RecvBody> {
         assert!(self.can_proceed(), "RecvBody cannot proceed");
 
         if self.inner.is_redirect() {
-            RecvBodyResult::Redirect(State::wrap(self.inner))
+            RecvBodyResult::Redirect(Flow::wrap(self.inner))
         } else {
-            RecvBodyResult::Cleanup(State::wrap(self.inner))
+            RecvBodyResult::Cleanup(Flow::wrap(self.inner))
         }
     }
 }
 
 pub enum RecvBodyResult<'a> {
-    Redirect(State<'a, Redirect>),
-    Cleanup(State<'a, Cleanup>),
+    Redirect(Flow<'a, Redirect>),
+    Cleanup(Flow<'a, Cleanup>),
 }
 
 // //////////////////////////////////////////////////////////////////////////////////////////// REDIRECT
 
-impl<'a> State<'a, Redirect> {
-    pub fn as_new_state(&self) -> Result<State<'a, Prepare>, Error> {
+impl<'a> Flow<'a, Redirect> {
+    pub fn as_new_state(&self) -> Result<Flow<'a, Prepare>, Error> {
         let header = match &self.inner.location {
             Some(v) => v,
             None => return Err(Error::NoLocationHeader),
@@ -432,7 +430,7 @@ impl<'a> State<'a, Redirect> {
         };
 
         // Next state
-        let mut next = State::new(previous.inner())?;
+        let mut next = Flow::new(previous.inner())?;
 
         let request = next.inner.call.request_mut();
 
@@ -445,14 +443,14 @@ impl<'a> State<'a, Redirect> {
         Ok(next)
     }
 
-    pub fn proceed(self) -> State<'a, Cleanup> {
-        State::wrap(self.inner)
+    pub fn proceed(self) -> Flow<'a, Cleanup> {
+        Flow::wrap(self.inner)
     }
 }
 
 // //////////////////////////////////////////////////////////////////////////////////////////// CLEANUP
 
-impl<'a> State<'a, Cleanup> {
+impl<'a> Flow<'a, Cleanup> {
     pub fn must_close_connection(&self) -> bool {
         let maybe_reason = self.inner.close_reason.first();
 
