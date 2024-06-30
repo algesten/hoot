@@ -92,7 +92,7 @@ fn proceed_without_body_and_expect_100() {
         // there is no body to send.
         .get("https://q.test")
         .header("expect", "100-continue")
-        .body("hello");
+        .build();
 
     let mut flow = scenario.to_send_request();
     flow.write(&mut vec![0; 1024]).unwrap();

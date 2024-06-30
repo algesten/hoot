@@ -54,6 +54,7 @@ pub enum CloseReason {
     ClientConnectionClose,
     ServerConnectionClose,
     Not100Continue,
+    CloseDelimitedBody,
 }
 
 impl<'a, S> Flow<'a, S> {
@@ -184,7 +185,7 @@ pub enum SendRequestResult<'a> {
 // //////////////////////////////////////////////////////////////////////////////////////////// AWAIT 100
 
 impl<'a> Flow<'a, Await100> {
-    pub fn try_read_100(&mut self, input: &[u8]) -> Result<Option<usize>, Error> {
+    pub fn try_read_100(&mut self, input: &[u8]) -> Result<usize, Error> {
         // Try parsing a status line without any headers. The line we are looking for is:
         //
         //   HTTP/1.1 100 Continue\r\n\r\n
@@ -198,7 +199,7 @@ impl<'a> Flow<'a, Await100> {
                     if response.status() == StatusCode::CONTINUE {
                         // should_send_body ought to be true since initialization.
                         assert!(self.inner.should_send_body);
-                        Ok(Some(input_used))
+                        Ok(input_used)
                     } else {
                         // We encountered a status line, without headers, but it wasn't 100,
                         // so we should not continue to send the body. Furthermore we mustn't
@@ -206,13 +207,15 @@ impl<'a> Flow<'a, Await100> {
                         // https://curl.se/mail/lib-2004-08/0002.html
                         self.inner.close_reason.push(CloseReason::Not100Continue);
                         self.inner.should_send_body = false;
-                        Ok(None)
+                        Ok(0)
                     }
                 }
                 // Not enough input yet.
-                None => Ok(None),
+                None => Ok(0),
             },
             Err(e) => {
+                self.inner.await_100_continue = false;
+
                 if e == Error::HttpParseTooManyHeaders {
                     // We encountered headers after the status line. That means the server did
                     // not send 100-continue, and also continued to produce an answer before we
@@ -223,7 +226,7 @@ impl<'a> Flow<'a, Await100> {
                     // the Response<()> to the user. Hence this is not considered an error.
                     self.inner.close_reason.push(CloseReason::Not100Continue);
                     self.inner.should_send_body = false;
-                    Ok(None)
+                    Ok(0)
                 } else {
                     Err(e)
                 }
@@ -299,11 +302,6 @@ impl<'a> Flow<'a, RecvResponse> {
             // state Await100. This is not an error, it can happen if the network is slow.
             self.inner.await_100_continue = false;
 
-            // There should be no headers for this response.
-            if !response.headers().is_empty() {
-                return Err(Error::HeadersWith100);
-            }
-
             // We should consume the response and wait for the next.
             return Ok((input_used, None));
         }
@@ -336,7 +334,14 @@ impl<'a> Flow<'a, RecvResponse> {
         let maybe_call_body = call_body.into_body().unwrap();
 
         if let Some(call_body) = maybe_call_body {
+            if call_body.is_close_delimited() {
+                self.inner
+                    .close_reason
+                    .push(CloseReason::CloseDelimitedBody);
+            }
+
             self.inner.call = CallHolder::RecvBody(call_body);
+
             RecvResponseResult::RecvBody(Flow::wrap(self.inner))
         } else {
             let call_empty = CallHolder::Empty;
@@ -365,7 +370,8 @@ impl<'a> Flow<'a, RecvBody> {
     }
 
     pub fn can_proceed(&self) -> bool {
-        self.inner.call.as_recv_body().is_ended()
+        let call = self.inner.call.as_recv_body();
+        call.is_ended() || call.is_close_delimited()
     }
 
     pub fn proceed(self) -> RecvBodyResult<'a> {
@@ -475,6 +481,7 @@ impl fmt::Display for CloseReason {
                 CloseReason::ClientConnectionClose => "client sent Connection: close",
                 CloseReason::ServerConnectionClose => "server sent Connection: close",
                 CloseReason::Not100Continue => "got non-100 response before sending body",
+                CloseReason::CloseDelimitedBody => "response body is close delimited",
             }
         )
     }

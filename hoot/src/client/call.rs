@@ -2,7 +2,7 @@ use std::fmt;
 use std::io::Write;
 use std::marker::PhantomData;
 
-use http::{HeaderName, HeaderValue, Method, Request, Response, Version};
+use http::{HeaderName, HeaderValue, Method, Request, Response, StatusCode, Version};
 
 use crate::analyze::RequestExt;
 use crate::body::{BodyReader, BodyWriter};
@@ -377,6 +377,15 @@ impl<'a> Call<'a, RecvResponse> {
 
         let http10 = response.version() == Version::HTTP_10;
         let status = response.status().as_u16();
+
+        if status == StatusCode::CONTINUE {
+            // There should be no headers for this response.
+            if !response.headers().is_empty() {
+                return Err(Error::HeadersWith100);
+            }
+
+            return Ok(Some((input_used, response)));
+        }
 
         let header_lookup = |name: &str| {
             if let Some(header) = response.headers().get(name) {

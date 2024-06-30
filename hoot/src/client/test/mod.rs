@@ -8,6 +8,10 @@ mod state_send_body;
 
 mod state_recv_response;
 
+mod state_await_100;
+
+mod state_recv_body;
+
 trait TestSliceExt {
     fn as_str(&self) -> &str;
 }

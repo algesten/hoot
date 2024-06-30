@@ -3,11 +3,12 @@ use core::str;
 use crate::util::find_crlf;
 use crate::Error;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Dechunker {
     Size,
     Chunk(usize),
     CrLf,
+    Ending,
     Ended,
 }
 
@@ -32,6 +33,7 @@ impl Dechunker {
                 Dechunker::Size => self.read_size(src, &mut pos)?,
                 Dechunker::Chunk(_) => self.read_data(src, dst, &mut pos)?,
                 Dechunker::CrLf => self.expect_crlf(src, &mut pos)?,
+                Dechunker::Ending => self.expect_crlf(src, &mut pos)?,
                 Dechunker::Ended => false,
             };
 
@@ -70,7 +72,7 @@ impl Dechunker {
 
         pos.index_in += i + 2;
         *self = if len == 0 {
-            Self::Ended
+            Self::Ending
         } else {
             Self::Chunk(len)
         };
@@ -115,7 +117,11 @@ impl Dechunker {
         }
 
         pos.index_in += 2;
-        *self = Self::Size;
+        if *self == Dechunker::Ending {
+            *self = Dechunker::Ended;
+        } else {
+            *self = Self::Size;
+        }
 
         Ok(true)
     }
@@ -158,6 +164,8 @@ mod test {
         assert_eq!(d.left(), 0);
         assert!(!d.is_ended());
         assert_eq!(d.parse_input(b"0\r\n", &mut b)?, (3, 0));
+        assert!(!d.is_ended());
+        assert_eq!(d.parse_input(b"\r\n", &mut b)?, (2, 0));
         assert!(d.is_ended());
         Ok(())
     }
