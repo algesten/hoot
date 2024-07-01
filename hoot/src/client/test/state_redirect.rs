@@ -192,9 +192,9 @@ fn change_redirect_methods() {
 #[test]
 fn keep_auth_header_never() {
     let scenario = Scenario::builder()
-        .get("https://a.test/")
+        .get("https://a.test/foo")
         .header("authorization", "some secret")
-        .redirect(StatusCode::FOUND, "https://b.test/")
+        .redirect(StatusCode::FOUND, "https://a.test/bar")
         .build();
 
     let mut flow = scenario
@@ -207,10 +207,62 @@ fn keep_auth_header_never() {
     let mut o = vec![0; 1024];
 
     let n = flow.write(&mut o).unwrap();
-    assert_eq!(n, 32);
 
     let cmp = "\
-            GET / HTTP/1.1\r\n\
+            GET /bar HTTP/1.1\r\n\
+            host: a.test\r\n\
+            \r\n";
+    assert_eq!(o[..n].as_str(), cmp);
+}
+
+#[test]
+fn keep_auth_header_same_host() {
+    let scenario = Scenario::builder()
+        .get("https://a.test:123/foo")
+        .header("authorization", "some secret")
+        .redirect(StatusCode::FOUND, "https://a.test:234/bar")
+        .build();
+
+    let mut flow = scenario
+        .to_redirect()
+        .as_new_state(RedirectAuthHeaders::SameHost)
+        .unwrap()
+        .unwrap()
+        .proceed();
+
+    let mut o = vec![0; 1024];
+
+    let n = flow.write(&mut o).unwrap();
+
+    let cmp = "\
+            GET /bar HTTP/1.1\r\n\
+            host: a.test\r\n\
+            authorization: some secret\r\n\
+            \r\n";
+    assert_eq!(o[..n].as_str(), cmp);
+}
+
+#[test]
+fn dont_keep_auth_header_different_host() {
+    let scenario = Scenario::builder()
+        .get("https://a.test/foo")
+        .header("authorization", "some secret")
+        .redirect(StatusCode::FOUND, "https://b.test/bar")
+        .build();
+
+    let mut flow = scenario
+        .to_redirect()
+        .as_new_state(RedirectAuthHeaders::SameHost)
+        .unwrap()
+        .unwrap()
+        .proceed();
+
+    let mut o = vec![0; 1024];
+
+    let n = flow.write(&mut o).unwrap();
+
+    let cmp = "\
+            GET /bar HTTP/1.1\r\n\
             host: b.test\r\n\
             \r\n";
     assert_eq!(o[..n].as_str(), cmp);

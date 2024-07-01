@@ -229,7 +229,7 @@ mod call;
 pub use call::Call;
 
 mod flow;
-pub use flow::{CloseReason, Flow};
+pub use flow::{CloseReason, Flow, RedirectAuthHeaders};
 
 pub mod results {
     pub use super::flow::{Await100Result, RecvBodyResult};

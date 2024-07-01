@@ -75,7 +75,10 @@ impl<'a> AmendedRequest<'a> {
         let r = &self.request;
         (
             r.method(),
-            r.uri().path_and_query().map(|p| p.as_str()).unwrap_or("/"),
+            self.uri()
+                .path_and_query()
+                .map(|p| p.as_str())
+                .unwrap_or("/"),
             r.version(),
         )
     }
