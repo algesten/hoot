@@ -117,7 +117,7 @@
 //! // In this example, we know the next state is Await100.
 //! // A real client needs to match on the variants.
 //! let mut flow = match flow.proceed() {
-//!     SendRequestResult::Await100(v) => v,
+//!     Some(SendRequestResult::Await100(v)) => v,
 //!     _ => panic!(),
 //! };
 //!
@@ -173,7 +173,7 @@
 //! // ********************************** RecvRequest
 //!
 //! // Proceed to read the request.
-//! let mut flow = flow.proceed();
+//! let mut flow = flow.proceed().unwrap();
 //!
 //! let part = b"HTTP/1.1 200 OK\r\nContent-Len";
 //! let full = b"HTTP/1.1 200 OK\r\nContent-Length: 9\r\n\r\n";
@@ -198,7 +198,7 @@
 //! // It's not possible to proceed until we
 //! // have read a response.
 //! let mut flow = match flow.proceed() {
-//!     RecvResponseResult::RecvBody(v) => v,
+//!     Some(RecvResponseResult::RecvBody(v)) => v,
 //!     _ => panic!(),
 //! };
 //!
@@ -213,7 +213,7 @@
 //! // ********************************** Cleanup
 //!
 //! let flow = match flow.proceed() {
-//!     RecvBodyResult::Cleanup(v) => v,
+//!     Some(RecvBodyResult::Cleanup(v)) => v,
 //!     _ => panic!(),
 //! };
 //!

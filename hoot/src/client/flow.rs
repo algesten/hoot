@@ -149,15 +149,17 @@ impl<'a> Flow<'a, SendRequest> {
         }
     }
 
-    pub fn proceed(mut self) -> SendRequestResult<'a> {
-        assert!(self.can_proceed(), "SendRequest cannot proceed");
+    pub fn proceed(mut self) -> Option<SendRequestResult<'a>> {
+        if !self.can_proceed() {
+            return None;
+        }
 
         if self.inner.should_send_body {
-            if self.inner.await_100_continue {
+            Some(if self.inner.await_100_continue {
                 SendRequestResult::Await100(Flow::wrap(self.inner))
             } else {
                 SendRequestResult::SendBody(Flow::wrap(self.inner))
-            }
+            })
         } else {
             let call = match self.inner.call {
                 CallHolder::WithoutBody(v) => v,
@@ -171,7 +173,7 @@ impl<'a> Flow<'a, SendRequest> {
             let call = CallHolder::RecvResponse(call_recv);
             self.inner.call = call;
 
-            SendRequestResult::RecvResponse(Flow::wrap(self.inner))
+            Some(SendRequestResult::RecvResponse(Flow::wrap(self.inner)))
         }
     }
 }
@@ -265,8 +267,10 @@ impl<'a> Flow<'a, SendBody> {
         self.inner.call.as_with_body().is_finished()
     }
 
-    pub fn proceed(mut self) -> Flow<'a, RecvResponse> {
-        assert!(self.can_proceed(), "SendBody cannot proceed");
+    pub fn proceed(mut self) -> Option<Flow<'a, RecvResponse>> {
+        if !self.can_proceed() {
+            return None;
+        }
 
         let call_body = match self.inner.call {
             CallHolder::WithBody(v) => v,
@@ -280,7 +284,7 @@ impl<'a> Flow<'a, SendBody> {
         let call = CallHolder::RecvResponse(call_recv);
         self.inner.call = call;
 
-        Flow::wrap(self.inner)
+        Some(Flow::wrap(self.inner))
     }
 }
 
@@ -328,8 +332,10 @@ impl<'a> Flow<'a, RecvResponse> {
         self.inner.call.as_recv_response().is_finished()
     }
 
-    pub fn proceed(mut self) -> RecvResponseResult<'a> {
-        assert!(self.can_proceed(), "RecvResponse cannot proceed");
+    pub fn proceed(mut self) -> Option<RecvResponseResult<'a>> {
+        if !self.can_proceed() {
+            return None;
+        }
 
         let call_body = match self.inner.call {
             CallHolder::RecvResponse(v) => v,
@@ -348,15 +354,15 @@ impl<'a> Flow<'a, RecvResponse> {
 
             self.inner.call = CallHolder::RecvBody(call_body);
 
-            RecvResponseResult::RecvBody(Flow::wrap(self.inner))
+            Some(RecvResponseResult::RecvBody(Flow::wrap(self.inner)))
         } else {
             self.inner.call = CallHolder::RecvBody(call_body);
 
-            if self.inner.is_redirect() {
+            Some(if self.inner.is_redirect() {
                 RecvResponseResult::Redirect(Flow::wrap(self.inner))
             } else {
                 RecvResponseResult::Cleanup(Flow::wrap(self.inner))
-            }
+            })
         }
     }
 }
@@ -379,14 +385,16 @@ impl<'a> Flow<'a, RecvBody> {
         call.is_ended() || call.is_close_delimited()
     }
 
-    pub fn proceed(self) -> RecvBodyResult<'a> {
-        assert!(self.can_proceed(), "RecvBody cannot proceed");
+    pub fn proceed(self) -> Option<RecvBodyResult<'a>> {
+        if !self.can_proceed() {
+            return None;
+        }
 
-        if self.inner.is_redirect() {
+        Some(if self.inner.is_redirect() {
             RecvBodyResult::Redirect(Flow::wrap(self.inner))
         } else {
             RecvBodyResult::Cleanup(Flow::wrap(self.inner))
-        }
+        })
     }
 }
 

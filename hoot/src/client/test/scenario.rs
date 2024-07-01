@@ -52,7 +52,7 @@ impl Scenario {
         flow.write(&mut vec![0; 1024]).unwrap();
 
         match flow.proceed() {
-            SendRequestResult::SendBody(v) => v,
+            Some(SendRequestResult::SendBody(v)) => v,
             _ => unreachable!("Incorrect scenario not leading to_send_body()"),
         }
     }
@@ -64,7 +64,7 @@ impl Scenario {
         flow.write(&mut vec![0; 1024]).unwrap();
 
         match flow.proceed() {
-            SendRequestResult::Await100(v) => v,
+            Some(SendRequestResult::Await100(v)) => v,
             _ => unreachable!("Incorrect scenario not leading to_await_100()"),
         }
     }
@@ -79,7 +79,7 @@ impl Scenario {
             let mut flow = if flow.inner().await_100_continue {
                 // Go via Await100
                 let flow = match flow.proceed() {
-                    SendRequestResult::Await100(v) => v,
+                    Some(SendRequestResult::Await100(v)) => v,
                     _ => unreachable!(),
                 };
 
@@ -90,7 +90,7 @@ impl Scenario {
                 }
             } else {
                 match flow.proceed() {
-                    SendRequestResult::SendBody(v) => v,
+                    Some(SendRequestResult::SendBody(v)) => v,
                     _ => unreachable!(),
                 }
             };
@@ -105,10 +105,10 @@ impl Scenario {
 
             flow.write(&[], &mut output).unwrap();
 
-            flow.proceed()
+            flow.proceed().unwrap()
         } else {
             match flow.proceed() {
-                SendRequestResult::RecvResponse(v) => v,
+                Some(SendRequestResult::RecvResponse(v)) => v,
                 _ => unreachable!(),
             }
         }
@@ -125,7 +125,7 @@ impl Scenario {
         state.try_response(&input).unwrap();
 
         match state.proceed() {
-            RecvResponseResult::RecvBody(v) => v,
+            Some(RecvResponseResult::RecvBody(v)) => v,
             _ => unreachable!("Incorrect scenario not leading to_recv_body()"),
         }
     }
@@ -137,7 +137,7 @@ impl Scenario {
 
         state.try_response(&input).unwrap();
 
-        match state.proceed() {
+        match state.proceed().unwrap() {
             RecvResponseResult::Redirect(v) => v,
             RecvResponseResult::RecvBody(mut state) => {
                 let mut output = vec![0; 1024];
@@ -145,7 +145,7 @@ impl Scenario {
                 state.read(&self.recv_body, &mut output).unwrap();
 
                 match state.proceed() {
-                    RecvBodyResult::Redirect(v) => v,
+                    Some(RecvBodyResult::Redirect(v)) => v,
                     _ => unreachable!("Incorrect scenario not leading to_redirect()"),
                 }
             }
