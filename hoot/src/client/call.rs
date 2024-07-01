@@ -11,7 +11,26 @@ use crate::util::Writer;
 use crate::Error;
 
 use super::amended::AmendedRequest;
-use super::{RecvBody, RecvResponse, WithBody, WithoutBody, MAX_RESPONSE_HEADERS};
+use super::MAX_RESPONSE_HEADERS;
+
+pub mod state {
+    /// Type state for requests without bodies via [`Call::without_body()`]
+    #[doc(hidden)]
+    pub struct WithoutBody(());
+
+    /// Type state for streaming bodies via [`Call::with_streaming_body()`]
+    #[doc(hidden)]
+    pub struct WithBody(());
+
+    /// Type state for receiving the HTTP Response
+    #[doc(hidden)]
+    pub struct RecvResponse(());
+
+    /// Type state for receiving the response body
+    #[doc(hidden)]
+    pub struct RecvBody(());
+}
+use self::state::*;
 
 /// An HTTP/1.1 call
 ///
@@ -191,7 +210,7 @@ impl<'a> Call<'a, WithoutBody> {
     /// Proceed to receiving a response
     ///
     /// Once the request is finished writing, proceed to receiving a response. Will error
-    /// if [`Call::request_finished()`] returns `false`.
+    /// if [`Call::is_finished()`] returns `false`.
     pub fn into_receive(self) -> Result<Call<'a, RecvResponse>, Error> {
         self.do_into_receive()
     }
@@ -276,7 +295,7 @@ impl<'a> Call<'a, WithBody> {
     /// Proceed to receiving a response
     ///
     /// Once the request is finished writing, proceed to receiving a response. Will error
-    /// if [`Call::request_finished()`] returns `false`.
+    /// if [`Call::is_finished()`] returns `false`.
     pub fn into_receive(self) -> Result<Call<'a, RecvResponse>, Error> {
         self.do_into_receive()
     }

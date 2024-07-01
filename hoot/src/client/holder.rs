@@ -4,7 +4,8 @@ use crate::analyze::MethodExt;
 use crate::Error;
 
 use super::amended::AmendedRequest;
-use super::{Call, RecvBody, RecvResponse, WithBody, WithoutBody};
+use super::call::state::{RecvBody, RecvResponse, WithBody, WithoutBody};
+use super::Call;
 
 /// Holder of [`Call`] regardless of type state
 ///

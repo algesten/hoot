@@ -243,24 +243,6 @@ mod holder;
 #[cfg(test)]
 mod test;
 
-// TODO(martin): let's move these type states somewhere more relevant.
-
-/// Type state for requests without bodies via [`Call::without_body()`]
-#[doc(hidden)]
-pub struct WithoutBody(());
-
-/// Type state for streaming bodies via [`Call::with_streaming_body()`]
-#[doc(hidden)]
-pub struct WithBody(());
-
-/// Type state for receiving the HTTP Response
-#[doc(hidden)]
-pub struct RecvResponse(());
-
-/// Type state for receiving the response body
-#[doc(hidden)]
-pub struct RecvBody(());
-
 /// Max number of additional headers to amend an HTTP request with
 pub const MAX_EXTRA_HEADERS: usize = 64;
 
