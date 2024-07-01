@@ -4,7 +4,6 @@ use std::marker::PhantomData;
 
 use http::{HeaderName, HeaderValue, Method, Request, Response, StatusCode, Version};
 
-use crate::analyze::RequestExt;
 use crate::body::{BodyReader, BodyWriter};
 use crate::parser::try_parse_response;
 use crate::util::Writer;
@@ -47,6 +46,7 @@ use self::state::*;
 ///
 pub struct Call<'a, B> {
     request: AmendedRequest<'a>,
+    analyzed: bool,
     state: BodyState,
     _ph: PhantomData<B>,
 }
@@ -85,34 +85,41 @@ impl<'a> Call<'a, ()> {
 
 impl<'a, B> Call<'a, B> {
     fn new(request: &'a Request<()>, default_body_mode: BodyWriter) -> Result<Self, Error> {
-        let info = request.analyze(default_body_mode)?;
+        let request = AmendedRequest::new(request);
 
-        let mut request = AmendedRequest::new(request);
+        Ok(Call {
+            request,
+            analyzed: false,
+            state: BodyState {
+                writer: default_body_mode,
+                ..Default::default()
+            },
+            _ph: PhantomData,
+        })
+    }
+
+    fn analyze_request(&mut self) -> Result<(), Error> {
+        let info = self.request.analyze(self.state.writer)?;
 
         if !info.req_host_header {
-            if let Some(host) = request.uri().host() {
+            if let Some(host) = self.request.uri().host() {
                 // User did not set a host header, and there is one in uri, we set that.
                 // We need an owned value to set the host header.
                 let host =
                     HeaderValue::from_str(host).map_err(|e| Error::BadHeader(e.to_string()))?;
-                request.set_header("Host", host)?;
+                self.request.set_header("Host", host)?;
             }
         }
 
         if !info.req_body_header && info.body_mode.has_body() {
             // User did not set a body header, we set one.
             let header = info.body_mode.body_header();
-            request.set_header(header.0, header.1)?;
+            self.request.set_header(header.0, header.1)?;
         }
 
-        Ok(Call {
-            request,
-            state: BodyState {
-                writer: info.body_mode,
-                ..Default::default()
-            },
-            _ph: PhantomData,
-        })
+        self.state.writer = info.body_mode;
+
+        Ok(())
     }
 
     fn do_into_receive(self) -> Result<Call<'a, RecvResponse>, Error> {
@@ -122,6 +129,7 @@ impl<'a, B> Call<'a, B> {
 
         Ok(Call {
             request: self.request,
+            analyzed: self.analyzed,
             state: BodyState {
                 phase: Phase::RecvResponse,
                 ..self.state
@@ -195,6 +203,11 @@ impl<'a> Call<'a, WithoutBody> {
     /// assert_eq!(s, "HEAD /page HTTP/1.1\r\nhost: foo.test\r\n\r\n");
     /// ```
     pub fn write(&mut self, output: &mut [u8]) -> Result<usize, Error> {
+        if !self.analyzed {
+            self.analyze_request()?;
+            self.analyzed = true;
+        }
+
         let mut w = Writer::new(output);
         try_write_prelude(&self.request, &mut self.state, &mut w)?;
 
@@ -257,6 +270,11 @@ impl<'a> Call<'a, WithBody> {
     /// );
     /// ```
     pub fn write(&mut self, input: &[u8], output: &mut [u8]) -> Result<(usize, usize), Error> {
+        if !self.analyzed {
+            self.analyze_request()?;
+            self.analyzed = true;
+        }
+
         let mut w = Writer::new(output);
 
         let mut input_used = 0;
@@ -459,6 +477,7 @@ impl<'a> Call<'a, RecvResponse> {
     pub(crate) fn do_into_body(self) -> Call<'a, RecvBody> {
         Call {
             request: self.request,
+            analyzed: self.analyzed,
             state: BodyState {
                 phase: Phase::RecvBody,
                 ..self.state
@@ -572,7 +591,9 @@ mod test {
     #[test]
     fn head_with_body() {
         let req = Request::head("http://foo.test/page").body(()).unwrap();
-        let err = Call::with_body(&req).unwrap_err();
+        let mut call = Call::with_body(&req).unwrap();
+
+        let err = call.write(&[], &mut []).unwrap_err();
 
         assert_eq!(err, Error::MethodForbidsBody(Method::HEAD));
     }
@@ -728,7 +749,9 @@ mod test {
     #[test]
     fn post_without_body() {
         let req = Request::post("http://foo.test/page").body(()).unwrap();
-        let err = Call::without_body(&req).unwrap_err();
+        let mut call = Call::without_body(&req).unwrap();
+
+        let err = call.write(&mut []).unwrap_err();
 
         assert_eq!(err, Error::MethodRequiresBody(Method::POST));
     }

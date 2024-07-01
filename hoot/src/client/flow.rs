@@ -1,10 +1,11 @@
 use std::fmt;
 use std::marker::PhantomData;
 
+use http::uri::Scheme;
 use http::{HeaderName, HeaderValue, Method, Request, Response, StatusCode, Uri, Version};
 use smallvec::SmallVec;
 
-use crate::analyze::{HeaderIterExt, MethodExt, StatusExt};
+use crate::ext::{HeaderIterExt, MethodExt, StatusExt};
 use crate::parser::try_parse_response;
 use crate::Error;
 
@@ -406,7 +407,10 @@ pub enum RecvBodyResult<'a> {
 // //////////////////////////////////////////////////////////////////////////////////////////// REDIRECT
 
 impl<'a> Flow<'a, Redirect> {
-    pub fn as_new_state(&self) -> Result<Option<Flow<'a, Prepare>>, Error> {
+    pub fn as_new_state(
+        &self,
+        redirect_auth_headers: RedirectAuthHeaders,
+    ) -> Result<Option<Flow<'a, Prepare>>, Error> {
         let header = match &self.inner.location {
             Some(v) => v,
             None => return Err(Error::NoLocationHeader),
@@ -470,6 +474,17 @@ impl<'a> Flow<'a, Redirect> {
         request.set_uri(uri);
         request.set_method(new_method);
 
+        let keep_auth_header = match redirect_auth_headers {
+            RedirectAuthHeaders::Never => false,
+            RedirectAuthHeaders::SameHost => {
+                can_redirect_auth_header(previous.uri(), request.uri())
+            }
+        };
+
+        if !keep_auth_header {
+            request.unset_header("authorization")?;
+        }
+
         // TODO(martin): clear out unwanted headers
 
         Ok(Some(next))
@@ -478,6 +493,31 @@ impl<'a> Flow<'a, Redirect> {
     pub fn proceed(self) -> Flow<'a, Cleanup> {
         Flow::wrap(self.inner)
     }
+}
+
+fn can_redirect_auth_header(prev: &Uri, next: &Uri) -> bool {
+    let host_prev = prev.authority().map(|a| a.host());
+    let host_next = next.authority().map(|a| a.host());
+    let scheme_prev = prev.scheme();
+    let scheme_next = next.scheme();
+    host_prev == host_next && (scheme_prev == scheme_next || scheme_next == Some(&Scheme::HTTPS))
+}
+
+/// Strategy for keeping `authorization` headers during redirects.
+///
+/// * `Never` never preserves `authorization` header in redirects.
+/// * `SameHost` send the authorization header in redirects only if the host of the redirect is
+/// the same of the previous request, and both use the same scheme (or switch to a more secure one, i.e
+/// we can redirect from `http` to `https`, but not the reverse).
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum RedirectAuthHeaders {
+    /// Never preserve the `authorization` header on redirect. This is the default.
+    Never,
+    /// Preserve the `authorization` header when the redirect is to the same host. Both hosts must use
+    /// the same scheme (or switch to a more secure one, i.e we can redirect from `http` to `https`,
+    /// but not the reverse).
+    SameHost,
 }
 
 // //////////////////////////////////////////////////////////////////////////////////////////// CLEANUP

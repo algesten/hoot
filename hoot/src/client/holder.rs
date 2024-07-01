@@ -1,6 +1,6 @@
 use http::Request;
 
-use crate::analyze::MethodExt;
+use crate::ext::MethodExt;
 use crate::Error;
 
 use super::amended::AmendedRequest;

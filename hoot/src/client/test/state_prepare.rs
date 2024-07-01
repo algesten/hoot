@@ -9,7 +9,7 @@ fn proceed_without_amended_headers() {
     let inner = flow.inner();
     let request = inner.call.request();
 
-    assert_eq!(request.headers_vec(), [("host", "q.test")]);
+    assert_eq!(request.headers_vec(), []);
 
     flow.proceed();
 }
@@ -30,7 +30,6 @@ fn proceed_with_amended_headers() {
         request.headers_vec(),
         [
             //
-            ("host", "q.test"),
             ("cookie", "name=bar"),
             ("cookie", "name2=baz"),
         ]

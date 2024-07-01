@@ -15,7 +15,7 @@ pub use http;
 mod error;
 pub use error::Error;
 
-mod analyze;
+mod ext;
 mod chunk;
 mod util;
 

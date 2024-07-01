@@ -9,15 +9,15 @@ fn proceed_without_100_continue() {
         .header("expect", "100-continue")
         .build();
 
-    let state = scenario.to_await_100();
+    let flow = scenario.to_await_100();
 
-    assert!(state.can_keep_await_100());
+    assert!(flow.can_keep_await_100());
 
-    let inner = state.inner();
+    let inner = flow.inner();
     assert!(inner.should_send_body);
     assert!(inner.close_reason.is_empty());
 
-    match state.proceed() {
+    match flow.proceed() {
         Await100Result::SendBody(_) => {}
         _ => panic!("proceed without 100-continue should go to SendBody"),
     }

@@ -1,7 +1,7 @@
 use http::{StatusCode, Version};
 
-use crate::analyze::HeaderIterExt;
 use crate::client::test::scenario::Scenario;
+use crate::ext::HeaderIterExt;
 
 // This is a complete response.
 const RESPONSE: &[u8] = b"\
