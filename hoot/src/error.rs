@@ -77,12 +77,6 @@ pub enum Error {
     #[error("location header is malformed")]
     BadLocationHeader,
 
-    #[error("illegal redirect of request body")]
-    IllegalRedirectSendBody,
-
-    #[error("illegal redirect of DELETE method")]
-    IllegalRedirectDelete,
-
     #[error("received headers with 100-continue response")]
     HeadersWith100,
 }

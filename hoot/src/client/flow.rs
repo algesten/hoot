@@ -406,7 +406,7 @@ pub enum RecvBodyResult<'a> {
 // //////////////////////////////////////////////////////////////////////////////////////////// REDIRECT
 
 impl<'a> Flow<'a, Redirect> {
-    pub fn as_new_state(&self) -> Result<Flow<'a, Prepare>, Error> {
+    pub fn as_new_state(&self) -> Result<Option<Flow<'a, Prepare>>, Error> {
         let header = match &self.inner.location {
             Some(v) => v,
             None => return Err(Error::NoLocationHeader),
@@ -428,13 +428,19 @@ impl<'a> Flow<'a, Redirect> {
         let uri = previous.new_uri_from_location(location)?;
 
         // Perform the redirect method differently depending on 3xx code.
-        let new_method = if status.is_redirect_retaining_method() {
+        let new_method = if status.is_redirect_retaining_status() {
             if method.need_request_body() {
                 // only resend the request if it cannot have a body
-                return Err(Error::IllegalRedirectSendBody);
+                info!(
+                    "No redirect ({}) for method {}",
+                    status.as_u16(),
+                    method.as_str()
+                );
+                return Ok(None);
             } else if method == Method::DELETE {
                 // NOTE: DELETE is intentionally excluded: https://stackoverflow.com/questions/299628
-                return Err(Error::IllegalRedirectDelete);
+                info!("No redirect ({}) for DELETE", status.as_u16());
+                return Ok(None);
             } else {
                 method.clone()
             }
@@ -444,6 +450,11 @@ impl<'a> Flow<'a, Redirect> {
             if matches!(*method, Method::GET | Method::HEAD) {
                 method.clone()
             } else {
+                debug!(
+                    "Change redirect ({}) method {} -> GET",
+                    status.as_u16(),
+                    method
+                );
                 Method::GET
             }
         };
@@ -453,13 +464,15 @@ impl<'a> Flow<'a, Redirect> {
 
         let request = next.inner.call.request_mut();
 
+        info!("Redirect to: {} {}", new_method, uri);
+
         // Override with the new uri
         request.set_uri(uri);
         request.set_method(new_method);
 
         // TODO(martin): clear out unwanted headers
 
-        Ok(next)
+        Ok(Some(next))
     }
 
     pub fn proceed(self) -> Flow<'a, Cleanup> {

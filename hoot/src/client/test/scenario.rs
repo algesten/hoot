@@ -1,7 +1,7 @@
 use std::io::Write;
 use std::marker::PhantomData;
 
-use http::{Request, Response, StatusCode};
+use http::{Method, Request, Response, StatusCode};
 
 use crate::client::flow::state::{
     Await100, Prepare, RecvBody, RecvResponse, Redirect, SendBody, SendRequest,
@@ -205,6 +205,10 @@ impl ScenarioBuilder<()> {
             recv_body: vec![],
             _ph: PhantomData,
         }
+    }
+
+    pub fn method(self, method: Method, uri: &str) -> ScenarioBuilder<WithReq> {
+        self.request(Request::builder().method(method).uri(uri).body(()).unwrap())
     }
 
     pub fn get(self, uri: &str) -> ScenarioBuilder<WithReq> {

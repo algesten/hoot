@@ -61,11 +61,11 @@ impl<'a, I: Iterator<Item = (&'a HeaderName, &'a HeaderValue)>> HeaderIterExt fo
 
 pub(crate) trait StatusExt {
     /// Detect 307/308 redirect
-    fn is_redirect_retaining_method(&self) -> bool;
+    fn is_redirect_retaining_status(&self) -> bool;
 }
 
 impl StatusExt for StatusCode {
-    fn is_redirect_retaining_method(&self) -> bool {
+    fn is_redirect_retaining_status(&self) -> bool {
         *self == StatusCode::TEMPORARY_REDIRECT || *self == StatusCode::PERMANENT_REDIRECT
     }
 }
