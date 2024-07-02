@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use http::{Method, Request, Response, StatusCode};
 
 use crate::client::flow::state::{
-    Await100, Prepare, RecvBody, RecvResponse, Redirect, SendBody, SendRequest,
+    Await100, Cleanup, Prepare, RecvBody, RecvResponse, Redirect, SendBody, SendRequest,
 };
 use crate::client::flow::{Await100Result, SendRequestResult};
 use crate::client::results::{RecvBodyResult, RecvResponseResult};
@@ -115,29 +115,29 @@ impl Scenario {
     }
 
     pub fn to_recv_body(&self) -> Flow<RecvBody> {
-        let mut state = self.to_recv_response();
+        let mut flow = self.to_recv_response();
 
         let input = write_response(&self.response);
 
         // use crate::client::test::TestSliceExt;
         // println!("{:?}", input.as_slice().as_str());
 
-        state.try_response(&input).unwrap();
+        flow.try_response(&input).unwrap();
 
-        match state.proceed() {
+        match flow.proceed() {
             Some(RecvResponseResult::RecvBody(v)) => v,
             _ => unreachable!("Incorrect scenario not leading to_recv_body()"),
         }
     }
 
     pub fn to_redirect(&self) -> Flow<Redirect> {
-        let mut state = self.to_recv_response();
+        let mut flow = self.to_recv_response();
 
         let input = write_response(&self.response);
 
-        state.try_response(&input).unwrap();
+        flow.try_response(&input).unwrap();
 
-        match state.proceed().unwrap() {
+        match flow.proceed().unwrap() {
             RecvResponseResult::Redirect(v) => v,
             RecvResponseResult::RecvBody(mut state) => {
                 let mut output = vec![0; 1024];
@@ -152,9 +152,33 @@ impl Scenario {
             _ => unreachable!("Incorrect scenario not leading to_redirect()"),
         }
     }
+
+    pub fn to_cleanup(&self) -> Flow<Cleanup> {
+        let mut flow = self.to_recv_response();
+
+        let input = write_response(&self.response);
+
+        flow.try_response(&input).unwrap();
+
+        match flow.proceed().unwrap() {
+            RecvResponseResult::Redirect(v) => v.proceed(),
+            RecvResponseResult::RecvBody(mut flow) => {
+                let mut output = vec![0; 1024];
+
+                flow.read(&self.recv_body, &mut output).unwrap();
+
+                match flow.proceed() {
+                    Some(RecvBodyResult::Redirect(v)) => v.proceed(),
+                    Some(RecvBodyResult::Cleanup(v)) => v,
+                    _ => unreachable!("Incorrect scenario not leading to_redirect()"),
+                }
+            }
+            RecvResponseResult::Cleanup(v) => v,
+        }
+    }
 }
 
-fn write_response(r: &Response<()>) -> Vec<u8> {
+pub fn write_response(r: &Response<()>) -> Vec<u8> {
     let mut input = Vec::<u8>::new();
 
     let s = r.status();

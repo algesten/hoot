@@ -29,6 +29,7 @@ pub struct Flow<'a, State> {
 }
 
 // pub(crate) for tests to inspect state
+#[derive(Debug)]
 pub(crate) struct Inner<'a> {
     pub call: CallHolder<'a>,
     pub close_reason: SmallVec<[CloseReason; 4]>,

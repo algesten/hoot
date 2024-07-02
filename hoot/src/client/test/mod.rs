@@ -14,6 +14,8 @@ mod state_recv_body;
 
 mod state_redirect;
 
+mod state_cleanup;
+
 trait TestSliceExt {
     fn as_str(&self) -> &str;
 }

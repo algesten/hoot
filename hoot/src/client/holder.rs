@@ -10,6 +10,7 @@ use super::Call;
 /// Holder of [`Call`] regardless of type state
 ///
 /// TODO(martin): is it weird to type state and then erase it?
+#[derive(Debug)]
 pub(crate) enum CallHolder<'a> {
     WithoutBody(Call<'a, WithoutBody>),
     WithBody(Call<'a, WithBody>),
