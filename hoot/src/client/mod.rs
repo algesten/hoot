@@ -3,7 +3,7 @@
 //! hoot is Sans-IO, which means "writing" and "reading" are made via buffers
 //! rather than the Write/Read std traits.
 //!
-//! The [`Flow`] object attempts to encode correct HTTP/1.1 handling using
+//! The [`Flow`](flow::Flow) object attempts to encode correct HTTP/1.1 handling using
 //! state variables, for example `Flow<'a, SendRequest>` to represent the
 //! lifecycle stage where we are to send the request.
 //!
@@ -58,7 +58,7 @@
 //! # Example
 //!
 //! ```
-//! use hoot::client::Flow;
+//! use hoot::client::flow::Flow;
 //! use hoot::http::Request;
 //! use hoot::client::results::*;
 //!
@@ -225,16 +225,9 @@
 //!
 //! ```
 
-mod call;
-pub use call::Call;
+pub mod call;
 
-mod flow;
-pub use flow::{CloseReason, Flow, RedirectAuthHeaders};
-
-pub mod results {
-    pub use super::flow::{Await100Result, RecvBodyResult};
-    pub use super::flow::{RecvResponseResult, SendRequestResult};
-}
+pub mod flow;
 
 mod amended;
 

@@ -58,7 +58,7 @@ impl<'a, B> Call<'a, (), B> {
     /// a [`Call`] instance that does not expect a user provided body.
     ///
     /// ```
-    /// # use hoot::client::Call;
+    /// # use hoot::client::call::Call;
     /// # use hoot::http::Request;
     /// let req = Request::head("http://foo.test/page").body(()).unwrap();
     /// Call::without_body(&req).unwrap();
@@ -73,7 +73,7 @@ impl<'a, B> Call<'a, (), B> {
     /// used even if the body is zero-sized (`content-length: 0`).
     ///
     /// ```
-    /// # use hoot::client::Call;
+    /// # use hoot::client::call::Call;
     /// # use hoot::http::Request;
     /// let req = Request::put("http://foo.test/path").body(()).unwrap();
     /// Call::with_body(&req).unwrap();
@@ -191,7 +191,7 @@ impl<'a, B> Call<'a, WithoutBody, B> {
     /// Returns how much of the output buffer that was used.
     ///
     /// ```
-    /// # use hoot::client::Call;
+    /// # use hoot::client::call::Call;
     /// # use hoot::http::Request;
     /// let req = Request::head("http://foo.test/page").body(()).unwrap();
     /// let mut call = Call::without_body(&req).unwrap();
@@ -243,7 +243,7 @@ impl<'a, B> Call<'a, WithBody, B> {
     /// were consumed. The second number is how many bytes of the `output` that were used.
     ///
     /// ```
-    /// # use hoot::client::Call;
+    /// # use hoot::client::call::Call;
     /// # use hoot::http::Request;
     /// let req = Request::post("http://f.test/page")
     ///     .header("transfer-encoding", "chunked")

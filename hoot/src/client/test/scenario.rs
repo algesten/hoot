@@ -6,9 +6,8 @@ use http::{Method, Request, Response, StatusCode};
 use crate::client::flow::state::{
     Await100, Cleanup, Prepare, RecvBody, RecvResponse, Redirect, SendBody, SendRequest,
 };
-use crate::client::flow::{Await100Result, SendRequestResult};
-use crate::client::results::{RecvBodyResult, RecvResponseResult};
-use crate::client::Flow;
+use crate::client::flow::{Await100Result, Flow, SendRequestResult};
+use crate::client::flow::{RecvBodyResult, RecvResponseResult};
 
 pub struct Scenario {
     request: Request<()>,
