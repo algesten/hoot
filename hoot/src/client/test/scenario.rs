@@ -25,7 +25,7 @@ impl Scenario {
 }
 
 impl Scenario {
-    pub fn to_prepare(&self) -> Flow<Prepare> {
+    pub fn to_prepare(&self) -> Flow<(), Prepare> {
         // The unwraps here are ok because the user is not supposed to
         // construct tests that test the Scenario builder itself.
         let mut flow = Flow::new(&self.request).unwrap();
@@ -37,7 +37,7 @@ impl Scenario {
         flow
     }
 
-    pub fn to_send_request(&self) -> Flow<SendRequest> {
+    pub fn to_send_request(&self) -> Flow<(), SendRequest> {
         let flow = self.to_prepare();
 
         let flow = flow.proceed();
@@ -45,7 +45,7 @@ impl Scenario {
         flow
     }
 
-    pub fn to_send_body(&self) -> Flow<SendBody> {
+    pub fn to_send_body(&self) -> Flow<(), SendBody> {
         let mut flow = self.to_send_request();
 
         // Write the prelude and discard
@@ -57,7 +57,7 @@ impl Scenario {
         }
     }
 
-    pub fn to_await_100(&self) -> Flow<Await100> {
+    pub fn to_await_100(&self) -> Flow<(), Await100> {
         let mut flow = self.to_send_request();
 
         // Write the prelude and discard
@@ -69,7 +69,7 @@ impl Scenario {
         }
     }
 
-    pub fn to_recv_response(&self) -> Flow<RecvResponse> {
+    pub fn to_recv_response(&self) -> Flow<(), RecvResponse> {
         let mut flow = self.to_send_request();
 
         // Write the prelude and discard
@@ -114,7 +114,7 @@ impl Scenario {
         }
     }
 
-    pub fn to_recv_body(&self) -> Flow<RecvBody> {
+    pub fn to_recv_body(&self) -> Flow<(), RecvBody> {
         let mut flow = self.to_recv_response();
 
         let input = write_response(&self.response);
@@ -130,7 +130,7 @@ impl Scenario {
         }
     }
 
-    pub fn to_redirect(&self) -> Flow<Redirect> {
+    pub fn to_redirect(&self) -> Flow<(), Redirect> {
         let mut flow = self.to_recv_response();
 
         let input = write_response(&self.response);
@@ -153,7 +153,7 @@ impl Scenario {
         }
     }
 
-    pub fn to_cleanup(&self) -> Flow<Cleanup> {
+    pub fn to_cleanup(&self) -> Flow<(), Cleanup> {
         let mut flow = self.to_recv_response();
 
         let input = write_response(&self.response);

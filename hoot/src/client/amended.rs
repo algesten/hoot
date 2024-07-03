@@ -34,16 +34,16 @@ use super::MAX_EXTRA_HEADERS;
 /// 9.  Changing the `Method` when following redirects.
 /// 10. Changing the `Uri` when following redirect.
 ///
-pub(crate) struct AmendedRequest<'a> {
-    request: &'a Request<()>,
+pub(crate) struct AmendedRequest<'a, Body> {
+    request: &'a Request<Body>,
     uri: Option<Uri>,
     headers: SmallVec<[(HeaderName, HeaderValue); MAX_EXTRA_HEADERS]>,
     unset: SmallVec<[HeaderName; 3]>,
     method: Method,
 }
 
-impl<'a> AmendedRequest<'a> {
-    pub fn new(request: &'a Request<()>) -> Self {
+impl<'a, Body> AmendedRequest<'a, Body> {
+    pub fn new(request: &'a Request<Body>) -> Self {
         let method = request.method().clone();
 
         AmendedRequest {
@@ -55,7 +55,7 @@ impl<'a> AmendedRequest<'a> {
         }
     }
 
-    pub fn inner(&self) -> &'a Request<()> {
+    pub fn inner(&self) -> &'a Request<Body> {
         self.request
     }
 
@@ -117,7 +117,7 @@ impl<'a> AmendedRequest<'a> {
             .iter()
             .map(|v| (&v.0, &v.1))
             .chain(self.request.headers().iter())
-            .filter(|v| !self.unset.contains(&v.0))
+            .filter(|v| !self.unset.contains(v.0))
     }
 
     fn headers_get_all(&self, key: &'static str) -> impl Iterator<Item = &HeaderValue> {

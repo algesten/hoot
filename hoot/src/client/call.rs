@@ -44,14 +44,14 @@ use self::state::*;
 /// 3. `Host` header if not set (TODO(martin): this does not really belong here?)
 /// 4. Writing and reading the request/response in a Sans-IO style.
 ///
-pub struct Call<'a, B> {
-    request: AmendedRequest<'a>,
+pub struct Call<'a, State, B> {
+    request: AmendedRequest<'a, B>,
     analyzed: bool,
     state: BodyState,
-    _ph: PhantomData<B>,
+    _ph: PhantomData<State>,
 }
 
-impl<'a> Call<'a, ()> {
+impl<'a, B> Call<'a, (), B> {
     /// Creates a call for a [`Method`] that do not have a request body
     ///
     /// Methods like `HEAD` and `GET` do not use a request body. This creates
@@ -63,7 +63,7 @@ impl<'a> Call<'a, ()> {
     /// let req = Request::head("http://foo.test/page").body(()).unwrap();
     /// Call::without_body(&req).unwrap();
     /// ```
-    pub fn without_body(request: &'a Request<()>) -> Result<Call<'a, WithoutBody>, Error> {
+    pub fn without_body(request: &'a Request<B>) -> Result<Call<'a, WithoutBody, B>, Error> {
         Call::new(request, BodyWriter::new_none())
     }
 
@@ -78,13 +78,13 @@ impl<'a> Call<'a, ()> {
     /// let req = Request::put("http://foo.test/path").body(()).unwrap();
     /// Call::with_body(&req).unwrap();
     /// ```
-    pub fn with_body(request: &'a Request<()>) -> Result<Call<'a, WithBody>, Error> {
+    pub fn with_body(request: &'a Request<B>) -> Result<Call<'a, WithBody, B>, Error> {
         Call::new(request, BodyWriter::new_chunked())
     }
 }
 
-impl<'a, B> Call<'a, B> {
-    fn new(request: &'a Request<()>, default_body_mode: BodyWriter) -> Result<Self, Error> {
+impl<'a, State, B> Call<'a, State, B> {
+    fn new(request: &'a Request<B>, default_body_mode: BodyWriter) -> Result<Self, Error> {
         let request = AmendedRequest::new(request);
 
         Ok(Call {
@@ -122,7 +122,7 @@ impl<'a, B> Call<'a, B> {
         Ok(())
     }
 
-    fn do_into_receive(self) -> Result<Call<'a, RecvResponse>, Error> {
+    fn do_into_receive(self) -> Result<Call<'a, RecvResponse, B>, Error> {
         if !self.state.writer.is_ended() {
             return Err(Error::UnfinishedRequest);
         }
@@ -138,11 +138,11 @@ impl<'a, B> Call<'a, B> {
         })
     }
 
-    pub(crate) fn amended(&self) -> &AmendedRequest<'a> {
+    pub(crate) fn amended(&self) -> &AmendedRequest<'a, B> {
         &self.request
     }
 
-    pub(crate) fn amended_mut(&mut self) -> &mut AmendedRequest<'a> {
+    pub(crate) fn amended_mut(&mut self) -> &mut AmendedRequest<'a, B> {
         &mut self.request
     }
 }
@@ -185,7 +185,7 @@ impl Phase {
     }
 }
 
-impl<'a> Call<'a, WithoutBody> {
+impl<'a, B> Call<'a, WithoutBody, B> {
     /// Write the request to the output buffer
     ///
     /// Returns how much of the output buffer that was used.
@@ -224,12 +224,12 @@ impl<'a> Call<'a, WithoutBody> {
     ///
     /// Once the request is finished writing, proceed to receiving a response. Will error
     /// if [`Call::is_finished()`] returns `false`.
-    pub fn into_receive(self) -> Result<Call<'a, RecvResponse>, Error> {
+    pub fn into_receive(self) -> Result<Call<'a, RecvResponse, B>, Error> {
         self.do_into_receive()
     }
 }
 
-impl<'a> Call<'a, WithBody> {
+impl<'a, B> Call<'a, WithBody, B> {
     /// Write a request, and consecutive body to the output buffer
     ///
     /// The first argument `input` is the body input buffer. If the request contained
@@ -314,13 +314,13 @@ impl<'a> Call<'a, WithBody> {
     ///
     /// Once the request is finished writing, proceed to receiving a response. Will error
     /// if [`Call::is_finished()`] returns `false`.
-    pub fn into_receive(self) -> Result<Call<'a, RecvResponse>, Error> {
+    pub fn into_receive(self) -> Result<Call<'a, RecvResponse, B>, Error> {
         self.do_into_receive()
     }
 }
 
-fn try_write_prelude(
-    request: &AmendedRequest<'_>,
+fn try_write_prelude<B>(
+    request: &AmendedRequest<'_, B>,
     state: &mut BodyState,
     w: &mut Writer,
 ) -> Result<(), Error> {
@@ -341,8 +341,8 @@ fn try_write_prelude(
     }
 }
 
-fn try_write_prelude_part(
-    request: &AmendedRequest<'_>,
+fn try_write_prelude_part<Body>(
+    request: &AmendedRequest<'_, Body>,
     state: &mut BodyState,
     w: &mut Writer,
 ) -> bool {
@@ -400,7 +400,7 @@ where
     }
 }
 
-impl<'a> Call<'a, RecvResponse> {
+impl<'a, B> Call<'a, RecvResponse, B> {
     /// Try reading response headers
     ///
     /// A response is only possible once the `input` holds all the HTTP response
@@ -438,7 +438,7 @@ impl<'a> Call<'a, RecvResponse> {
         };
 
         let recv_body_mode =
-            BodyReader::for_response(http10, &self.request.method(), status, &header_lookup)?;
+            BodyReader::for_response(http10, self.request.method(), status, &header_lookup)?;
 
         self.state.reader = Some(recv_body_mode);
 
@@ -454,7 +454,7 @@ impl<'a> Call<'a, RecvResponse> {
     /// Errors if called before [`Call::try_response()`] has produced a [`Response`].
     ///
     /// Returns `None` if there is no body such as the response to a `HEAD` request.
-    pub fn into_body(self) -> Result<Option<Call<'a, RecvBody>>, Error> {
+    pub fn into_body(self) -> Result<Option<Call<'a, RecvBody, B>>, Error> {
         let rbm = match &self.state.reader {
             Some(v) => v,
             None => return Err(Error::IncompleteResponse),
@@ -474,7 +474,7 @@ impl<'a> Call<'a, RecvResponse> {
         self.state.need_response_body()
     }
 
-    pub(crate) fn do_into_body(self) -> Call<'a, RecvBody> {
+    pub(crate) fn do_into_body(self) -> Call<'a, RecvBody, B> {
         Call {
             request: self.request,
             analyzed: self.analyzed,
@@ -487,7 +487,7 @@ impl<'a> Call<'a, RecvResponse> {
     }
 }
 
-impl<'b> Call<'b, RecvBody> {
+impl<'b, B> Call<'b, RecvBody, B> {
     /// Read the input as a response body
     ///
     /// Returns `(usize, usize)` where the first number is how many bytes of the input was used
@@ -525,7 +525,7 @@ impl<'b> Call<'b, RecvBody> {
 
 // pub struct Trailer(());
 
-impl<'a, B> fmt::Debug for Call<'a, B> {
+impl<'a, State, B> fmt::Debug for Call<'a, State, B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Call")
             .field("phase", &self.state.phase)
