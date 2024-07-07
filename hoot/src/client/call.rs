@@ -44,14 +44,14 @@ use self::state::*;
 /// 3. `Host` header if not set (TODO(martin): this does not really belong here?)
 /// 4. Writing and reading the request/response in a Sans-IO style.
 ///
-pub struct Call<'a, State, B> {
-    request: AmendedRequest<'a, B>,
+pub struct Call<State, B> {
+    request: AmendedRequest<B>,
     analyzed: bool,
     state: BodyState,
     _ph: PhantomData<State>,
 }
 
-impl<'a, B> Call<'a, (), B> {
+impl<B> Call<(), B> {
     /// Creates a call for a [`Method`] that do not have a request body
     ///
     /// Methods like `HEAD` and `GET` do not use a request body. This creates
@@ -61,9 +61,9 @@ impl<'a, B> Call<'a, (), B> {
     /// # use hoot::client::call::Call;
     /// # use hoot::http::Request;
     /// let req = Request::head("http://foo.test/page").body(()).unwrap();
-    /// Call::without_body(&req).unwrap();
+    /// Call::without_body(req).unwrap();
     /// ```
-    pub fn without_body(request: &'a Request<B>) -> Result<Call<'a, WithoutBody, B>, Error> {
+    pub fn without_body(request: Request<B>) -> Result<Call<WithoutBody, B>, Error> {
         Call::new(request, BodyWriter::new_none())
     }
 
@@ -76,15 +76,15 @@ impl<'a, B> Call<'a, (), B> {
     /// # use hoot::client::call::Call;
     /// # use hoot::http::Request;
     /// let req = Request::put("http://foo.test/path").body(()).unwrap();
-    /// Call::with_body(&req).unwrap();
+    /// Call::with_body(req).unwrap();
     /// ```
-    pub fn with_body(request: &'a Request<B>) -> Result<Call<'a, WithBody, B>, Error> {
+    pub fn with_body(request: Request<B>) -> Result<Call<WithBody, B>, Error> {
         Call::new(request, BodyWriter::new_chunked())
     }
 }
 
-impl<'a, State, B> Call<'a, State, B> {
-    fn new(request: &'a Request<B>, default_body_mode: BodyWriter) -> Result<Self, Error> {
+impl<State, B> Call<State, B> {
+    fn new(request: Request<B>, default_body_mode: BodyWriter) -> Result<Self, Error> {
         let request = AmendedRequest::new(request);
 
         Ok(Call {
@@ -122,7 +122,7 @@ impl<'a, State, B> Call<'a, State, B> {
         Ok(())
     }
 
-    fn do_into_receive(self) -> Result<Call<'a, RecvResponse, B>, Error> {
+    fn do_into_receive(self) -> Result<Call<RecvResponse, B>, Error> {
         if !self.state.writer.is_ended() {
             return Err(Error::UnfinishedRequest);
         }
@@ -138,11 +138,11 @@ impl<'a, State, B> Call<'a, State, B> {
         })
     }
 
-    pub(crate) fn amended(&self) -> &AmendedRequest<'a, B> {
+    pub(crate) fn amended(&self) -> &AmendedRequest<B> {
         &self.request
     }
 
-    pub(crate) fn amended_mut(&mut self) -> &mut AmendedRequest<'a, B> {
+    pub(crate) fn amended_mut(&mut self) -> &mut AmendedRequest<B> {
         &mut self.request
     }
 }
@@ -185,7 +185,7 @@ impl Phase {
     }
 }
 
-impl<'a, B> Call<'a, WithoutBody, B> {
+impl<'a, B> Call<WithoutBody, B> {
     /// Write the request to the output buffer
     ///
     /// Returns how much of the output buffer that was used.
@@ -194,7 +194,7 @@ impl<'a, B> Call<'a, WithoutBody, B> {
     /// # use hoot::client::call::Call;
     /// # use hoot::http::Request;
     /// let req = Request::head("http://foo.test/page").body(()).unwrap();
-    /// let mut call = Call::without_body(&req).unwrap();
+    /// let mut call = Call::without_body(req).unwrap();
     ///
     /// let mut output = vec![0; 1024];
     /// let n = call.write(&mut output).unwrap();
@@ -224,12 +224,12 @@ impl<'a, B> Call<'a, WithoutBody, B> {
     ///
     /// Once the request is finished writing, proceed to receiving a response. Will error
     /// if [`Call::is_finished()`] returns `false`.
-    pub fn into_receive(self) -> Result<Call<'a, RecvResponse, B>, Error> {
+    pub fn into_receive(self) -> Result<Call<RecvResponse, B>, Error> {
         self.do_into_receive()
     }
 }
 
-impl<'a, B> Call<'a, WithBody, B> {
+impl<'a, B> Call<WithBody, B> {
     /// Write a request, and consecutive body to the output buffer
     ///
     /// The first argument `input` is the body input buffer. If the request contained
@@ -249,7 +249,7 @@ impl<'a, B> Call<'a, WithBody, B> {
     ///     .header("transfer-encoding", "chunked")
     ///     .body(())
     ///     .unwrap();
-    /// let mut call = Call::with_body(&req).unwrap();
+    /// let mut call = Call::with_body(req).unwrap();
     ///
     /// let body = b"hallo";
     ///
@@ -314,13 +314,13 @@ impl<'a, B> Call<'a, WithBody, B> {
     ///
     /// Once the request is finished writing, proceed to receiving a response. Will error
     /// if [`Call::is_finished()`] returns `false`.
-    pub fn into_receive(self) -> Result<Call<'a, RecvResponse, B>, Error> {
+    pub fn into_receive(self) -> Result<Call<RecvResponse, B>, Error> {
         self.do_into_receive()
     }
 }
 
 fn try_write_prelude<B>(
-    request: &AmendedRequest<'_, B>,
+    request: &AmendedRequest<B>,
     state: &mut BodyState,
     w: &mut Writer,
 ) -> Result<(), Error> {
@@ -342,7 +342,7 @@ fn try_write_prelude<B>(
 }
 
 fn try_write_prelude_part<Body>(
-    request: &AmendedRequest<'_, Body>,
+    request: &AmendedRequest<Body>,
     state: &mut BodyState,
     w: &mut Writer,
 ) -> bool {
@@ -400,7 +400,7 @@ where
     }
 }
 
-impl<'a, B> Call<'a, RecvResponse, B> {
+impl<'a, B> Call<RecvResponse, B> {
     /// Try reading response headers
     ///
     /// A response is only possible once the `input` holds all the HTTP response
@@ -454,7 +454,7 @@ impl<'a, B> Call<'a, RecvResponse, B> {
     /// Errors if called before [`Call::try_response()`] has produced a [`Response`].
     ///
     /// Returns `None` if there is no body such as the response to a `HEAD` request.
-    pub fn into_body(self) -> Result<Option<Call<'a, RecvBody, B>>, Error> {
+    pub fn into_body(self) -> Result<Option<Call<RecvBody, B>>, Error> {
         let rbm = match &self.state.reader {
             Some(v) => v,
             None => return Err(Error::IncompleteResponse),
@@ -474,7 +474,7 @@ impl<'a, B> Call<'a, RecvResponse, B> {
         self.state.need_response_body()
     }
 
-    pub(crate) fn do_into_body(self) -> Call<'a, RecvBody, B> {
+    pub(crate) fn do_into_body(self) -> Call<RecvBody, B> {
         Call {
             request: self.request,
             analyzed: self.analyzed,
@@ -487,7 +487,7 @@ impl<'a, B> Call<'a, RecvResponse, B> {
     }
 }
 
-impl<'b, B> Call<'b, RecvBody, B> {
+impl<B> Call<RecvBody, B> {
     /// Read the input as a response body
     ///
     /// Returns `(usize, usize)` where the first number is how many bytes of the input was used
@@ -525,7 +525,7 @@ impl<'b, B> Call<'b, RecvBody, B> {
 
 // pub struct Trailer(());
 
-impl<'a, State, B> fmt::Debug for Call<'a, State, B> {
+impl<'a, State, B> fmt::Debug for Call<State, B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Call")
             .field("phase", &self.state.phase)
@@ -559,27 +559,27 @@ mod test {
     fn ensure_send_sync() {
         fn is_send_sync<T: Send + Sync>(_t: T) {}
 
-        is_send_sync(Call::without_body(&Request::new(())).unwrap());
+        is_send_sync(Call::without_body(Request::new(())).unwrap());
 
-        is_send_sync(Call::with_body(&Request::post("/").body(()).unwrap()).unwrap());
+        is_send_sync(Call::with_body(Request::post("/").body(()).unwrap()).unwrap());
     }
 
     #[test]
     fn create_empty() {
         let req = Request::builder().body(()).unwrap();
-        let _call = Call::without_body(&req);
+        let _call = Call::without_body(req);
     }
 
     #[test]
     fn create_streaming() {
         let req = Request::builder().body(()).unwrap();
-        let _call = Call::with_body(&req);
+        let _call = Call::with_body(req);
     }
 
     #[test]
     fn head_simple() {
         let req = Request::head("http://foo.test/page").body(()).unwrap();
-        let mut call = Call::without_body(&req).unwrap();
+        let mut call = Call::without_body(req).unwrap();
 
         let mut output = vec![0; 1024];
         let n = call.write(&mut output).unwrap();
@@ -591,7 +591,7 @@ mod test {
     #[test]
     fn head_with_body() {
         let req = Request::head("http://foo.test/page").body(()).unwrap();
-        let mut call = Call::with_body(&req).unwrap();
+        let mut call = Call::with_body(req).unwrap();
 
         let err = call.write(&[], &mut []).unwrap_err();
 
@@ -604,7 +604,7 @@ mod test {
             .header("content-length", 5)
             .body(())
             .unwrap();
-        let mut call = Call::with_body(&req).unwrap();
+        let mut call = Call::with_body(req).unwrap();
 
         let mut output = vec![0; 1024];
         let (i1, n1) = call.write(b"hallo", &mut output).unwrap();
@@ -627,7 +627,7 @@ mod test {
             .header("content-length", 5)
             .body(())
             .unwrap();
-        let mut call = Call::with_body(&req).unwrap();
+        let mut call = Call::with_body(req).unwrap();
 
         let mut output = vec![0; 1024];
 
@@ -673,7 +673,7 @@ mod test {
             .header("content-length", 2)
             .body(())
             .unwrap();
-        let mut call = Call::with_body(&req).unwrap();
+        let mut call = Call::with_body(req).unwrap();
 
         let body = b"hallo";
 
@@ -692,7 +692,7 @@ mod test {
             .header("content-length", 5)
             .body(())
             .unwrap();
-        let mut call = Call::with_body(&req).unwrap();
+        let mut call = Call::with_body(req).unwrap();
 
         let mut output = vec![0; 1024];
         let (i1, n1) = call.write(b"ha", &mut output).unwrap();
@@ -725,7 +725,7 @@ mod test {
             .header("transfer-encoding", "chunked")
             .body(())
             .unwrap();
-        let mut call = Call::with_body(&req).unwrap();
+        let mut call = Call::with_body(req).unwrap();
 
         let body = b"hallo";
 
@@ -749,7 +749,7 @@ mod test {
     #[test]
     fn post_without_body() {
         let req = Request::post("http://foo.test/page").body(()).unwrap();
-        let mut call = Call::without_body(&req).unwrap();
+        let mut call = Call::without_body(req).unwrap();
 
         let err = call.write(&mut []).unwrap_err();
 
@@ -759,7 +759,7 @@ mod test {
     #[test]
     fn post_streaming() {
         let req = Request::post("http://f.test/page").body(()).unwrap();
-        let mut call = Call::with_body(&req).unwrap();
+        let mut call = Call::with_body(req).unwrap();
 
         let mut output = vec![0; 1024];
         let (i1, n1) = call.write(b"hallo", &mut output).unwrap();
@@ -789,7 +789,7 @@ mod test {
             .header("content-length", "5")
             .body(())
             .unwrap();
-        let mut call = Call::with_body(&req).unwrap();
+        let mut call = Call::with_body(req).unwrap();
 
         let mut output = vec![0; 1024];
         let (i1, n1) = call.write(b"hallo", &mut output).unwrap();
@@ -810,7 +810,7 @@ mod test {
     #[test]
     fn post_streaming_after_end() {
         let req = Request::post("http://f.test/page").body(()).unwrap();
-        let mut call = Call::with_body(&req).unwrap();
+        let mut call = Call::with_body(req).unwrap();
 
         let mut output = vec![0; 1024];
         let (_, n1) = call.write(b"hallo", &mut output).unwrap();
@@ -829,7 +829,7 @@ mod test {
             .header("content-length", "5")
             .body(())
             .unwrap();
-        let mut call = Call::with_body(&req).unwrap();
+        let mut call = Call::with_body(req).unwrap();
 
         let mut output = vec![0; 1024];
         let (_, n1) = call.write(b"hallo", &mut output).unwrap();

@@ -1,3 +1,5 @@
+use std::mem;
+
 use http::{HeaderName, HeaderValue, Method, Request, Uri, Version};
 use smallvec::SmallVec;
 use url::Url;
@@ -34,20 +36,22 @@ use super::MAX_EXTRA_HEADERS;
 /// 9.  Changing the `Method` when following redirects.
 /// 10. Changing the `Uri` when following redirect.
 ///
-pub(crate) struct AmendedRequest<'a, Body> {
-    request: &'a Request<Body>,
+pub(crate) struct AmendedRequest<Body> {
+    request: Request<Option<Body>>,
     uri: Option<Uri>,
     headers: SmallVec<[(HeaderName, HeaderValue); MAX_EXTRA_HEADERS]>,
     unset: SmallVec<[HeaderName; 3]>,
     method: Method,
 }
 
-impl<'a, Body> AmendedRequest<'a, Body> {
-    pub fn new(request: &'a Request<Body>) -> Self {
+impl<Body> AmendedRequest<Body> {
+    pub fn new(request: Request<Body>) -> Self {
         let method = request.method().clone();
 
+        let (parts, body) = request.into_parts();
+
         AmendedRequest {
-            request,
+            request: Request::from_parts(parts, Some(body)),
             uri: None,
             headers: SmallVec::new(),
             unset: SmallVec::new(),
@@ -55,8 +59,10 @@ impl<'a, Body> AmendedRequest<'a, Body> {
         }
     }
 
-    pub fn inner(&self) -> &'a Request<Body> {
-        self.request
+    pub fn take_request(&mut self) -> Request<Body> {
+        let request = mem::replace(&mut self.request, Request::new(None));
+        let (parts, body) = request.into_parts();
+        Request::from_parts(parts, body.unwrap())
     }
 
     pub fn set_uri(&mut self, uri: Uri) {

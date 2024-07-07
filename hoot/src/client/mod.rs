@@ -58,9 +58,8 @@
 //! # Example
 //!
 //! ```
-//! use hoot::client::flow::Flow;
+//! use hoot::client::flow::*;
 //! use hoot::http::Request;
-//! use hoot::client::results::*;
 //!
 //! let request = Request::put("https://example.test/my-path")
 //!     .header("Expect", "100-continue")
@@ -70,7 +69,7 @@
 //!
 //! // ********************************** Prepare
 //!
-//! let mut flow = Flow::new(&request).unwrap();
+//! let mut flow = Flow::new(request).unwrap();
 //!
 //! // Prepare with state from cookie jar. The uri
 //! // is used to key the cookies.

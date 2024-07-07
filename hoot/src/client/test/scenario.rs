@@ -27,7 +27,7 @@ impl Scenario {
     pub fn to_prepare(&self) -> Flow<(), Prepare> {
         // The unwraps here are ok because the user is not supposed to
         // construct tests that test the Scenario builder itself.
-        let mut flow = Flow::new(&self.request).unwrap();
+        let mut flow = Flow::new(self.request.clone()).unwrap();
 
         for (key, value) in &self.headers_amend {
             flow.header(key, value).unwrap();
