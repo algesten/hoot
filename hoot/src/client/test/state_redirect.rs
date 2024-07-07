@@ -35,7 +35,7 @@ fn absolute_url() {
 
     let flow = scenario
         .to_redirect()
-        .as_new_state(RedirectAuthHeaders::Never)
+        .as_new_flow(RedirectAuthHeaders::Never)
         .unwrap()
         .unwrap();
 
@@ -51,7 +51,7 @@ fn relative_url_absolute_path() {
 
     let flow = scenario
         .to_redirect()
-        .as_new_state(RedirectAuthHeaders::Never)
+        .as_new_flow(RedirectAuthHeaders::Never)
         .unwrap()
         .unwrap();
 
@@ -67,7 +67,7 @@ fn relative_url_relative_path() {
 
     let flow = scenario
         .to_redirect()
-        .as_new_state(RedirectAuthHeaders::Never)
+        .as_new_flow(RedirectAuthHeaders::Never)
         .unwrap()
         .unwrap();
 
@@ -92,7 +92,7 @@ fn last_location_header() {
 
     let flow = scenario
         .to_redirect()
-        .as_new_state(RedirectAuthHeaders::Never)
+        .as_new_flow(RedirectAuthHeaders::Never)
         .unwrap()
         .unwrap();
 
@@ -169,7 +169,7 @@ fn change_redirect_methods() {
 
             let maybe_state = scenario
                 .to_redirect()
-                .as_new_state(RedirectAuthHeaders::Never)
+                .as_new_flow(RedirectAuthHeaders::Never)
                 .unwrap();
             if let Some(state) = maybe_state {
                 let inner = state.inner();
@@ -199,7 +199,7 @@ fn keep_auth_header_never() {
 
     let mut flow = scenario
         .to_redirect()
-        .as_new_state(RedirectAuthHeaders::Never)
+        .as_new_flow(RedirectAuthHeaders::Never)
         .unwrap()
         .unwrap()
         .proceed();
@@ -225,7 +225,7 @@ fn keep_auth_header_same_host() {
 
     let mut flow = scenario
         .to_redirect()
-        .as_new_state(RedirectAuthHeaders::SameHost)
+        .as_new_flow(RedirectAuthHeaders::SameHost)
         .unwrap()
         .unwrap()
         .proceed();
@@ -252,7 +252,7 @@ fn dont_keep_auth_header_different_host() {
 
     let mut flow = scenario
         .to_redirect()
-        .as_new_state(RedirectAuthHeaders::SameHost)
+        .as_new_flow(RedirectAuthHeaders::SameHost)
         .unwrap()
         .unwrap()
         .proceed();

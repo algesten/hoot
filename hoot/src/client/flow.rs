@@ -408,7 +408,7 @@ pub enum RecvBodyResult<'a, B> {
 // //////////////////////////////////////////////////////////////////////////////////////////// REDIRECT
 
 impl<'a, B> Flow<'a, B, Redirect> {
-    pub fn as_new_state(
+    pub fn as_new_flow(
         &self,
         redirect_auth_headers: RedirectAuthHeaders,
     ) -> Result<Option<Flow<'a, B, Prepare>>, Error> {
