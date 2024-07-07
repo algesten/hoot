@@ -491,6 +491,17 @@ impl<'a, B> Flow<'a, B, Redirect> {
         Ok(Some(next))
     }
 
+    pub fn must_close_connection(&self) -> bool {
+        let maybe_reason = self.inner.close_reason.first();
+
+        if let Some(reason) = maybe_reason {
+            debug!("Close connection because {}", reason);
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn proceed(self) -> Flow<'a, B, Cleanup> {
         Flow::wrap(self.inner)
     }
