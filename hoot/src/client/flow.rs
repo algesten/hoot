@@ -265,6 +265,23 @@ impl<B> Flow<B, SendBody> {
         self.inner.call.as_with_body_mut().write(input, output)
     }
 
+    pub fn calculate_output_overhead(&mut self, output_len: usize) -> Result<usize, Error> {
+        let call = self.inner.call.as_with_body_mut();
+        call.maybe_analyze()?;
+
+        Ok(if call.is_chunked() {
+            // The + 1 and floor() is to make even powers of 16 right.
+            // The + 4 is for the \r\n overhead. A chunk is:
+            // <digits_in_hex>\r\n
+            // <chunk>\r\n
+            // 0\r\n
+            // \r\n
+            ((output_len as f64).log(16.0) + 1.0).floor() as usize + 4
+        } else {
+            0
+        })
+    }
+
     pub fn can_proceed(&self) -> bool {
         self.inner.call.as_with_body().is_finished()
     }

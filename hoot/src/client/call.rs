@@ -270,10 +270,7 @@ impl<'a, B> Call<WithBody, B> {
     /// );
     /// ```
     pub fn write(&mut self, input: &[u8], output: &mut [u8]) -> Result<(usize, usize), Error> {
-        if !self.analyzed {
-            self.analyze_request()?;
-            self.analyzed = true;
-        }
+        self.maybe_analyze()?;
 
         let mut w = Writer::new(output);
 
@@ -298,12 +295,24 @@ impl<'a, B> Call<WithBody, B> {
         Ok((input_used, output_used))
     }
 
+    pub(crate) fn maybe_analyze(&mut self) -> Result<(), Error> {
+        if !self.analyzed {
+            self.analyze_request()?;
+            self.analyzed = true;
+        }
+        Ok(())
+    }
+
     pub(crate) fn is_prelude(&self) -> bool {
         self.state.phase.is_prelude()
     }
 
     pub(crate) fn is_body(&self) -> bool {
         self.state.phase.is_body()
+    }
+
+    pub(crate) fn is_chunked(&self) -> bool {
+        self.state.writer.is_chunked()
     }
 
     pub fn is_finished(&self) -> bool {

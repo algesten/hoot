@@ -15,6 +15,9 @@ fn write_with_content_length() {
     // deliberately short buffer to require multiple writes
     let mut output = vec![0; 3];
 
+    let overhead = flow.calculate_output_overhead(output.len()).unwrap();
+    assert_eq!(overhead, 0);
+
     assert!(!flow.can_proceed());
 
     // 1st write
@@ -84,6 +87,9 @@ fn write_with_chunked() {
     let mut flow = scenario.to_send_body();
 
     let mut output = vec![0; 1024];
+
+    let overhead = flow.calculate_output_overhead(output.len()).unwrap();
+    assert_eq!(overhead, 7);
 
     assert!(!flow.can_proceed());
 
