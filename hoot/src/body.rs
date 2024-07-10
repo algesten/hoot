@@ -134,6 +134,20 @@ impl BodyWriter {
             _ => None,
         }
     }
+
+    pub(crate) fn consume_direct_write(&mut self, amount: usize) {
+        match &mut self.mode {
+            SenderMode::None => unreachable!(),
+            SenderMode::Sized(left) => {
+                *left -= amount as u64;
+
+                if *left == 0 {
+                    self.ended = true;
+                }
+            }
+            SenderMode::Chunked => unreachable!(),
+        }
+    }
 }
 
 fn write_chunk(input: &[u8], input_used: &mut usize, w: &mut Writer, max_chunk: usize) -> bool {

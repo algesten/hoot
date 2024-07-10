@@ -295,6 +295,20 @@ impl<'a, B> Call<WithBody, B> {
         Ok((input_used, output_used))
     }
 
+    pub(crate) fn consume_direct_write(&mut self, amount: usize) -> Result<(), Error> {
+        if let Some(left) = self.state.writer.left_to_send() {
+            if amount as u64 > left {
+                return Err(Error::BodyLargerThanContentLength);
+            }
+        } else {
+            return Err(Error::BodyIsChunked);
+        }
+
+        self.state.writer.consume_direct_write(amount);
+
+        Ok(())
+    }
+
     pub(crate) fn maybe_analyze(&mut self) -> Result<(), Error> {
         if !self.analyzed {
             self.analyze_request()?;

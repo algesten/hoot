@@ -79,6 +79,9 @@ pub enum Error {
 
     #[error("received headers with 100-continue response")]
     HeadersWith100,
+
+    #[error("body is chunked")]
+    BodyIsChunked,
 }
 
 impl From<httparse::Error> for Error {

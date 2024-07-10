@@ -265,6 +265,13 @@ impl<B> Flow<B, SendBody> {
         self.inner.call.as_with_body_mut().write(input, output)
     }
 
+    pub fn consume_direct_write(&mut self, amount: usize) -> Result<(), Error> {
+        self.inner
+            .call
+            .as_with_body_mut()
+            .consume_direct_write(amount)
+    }
+
     pub fn calculate_output_overhead(&mut self, output_len: usize) -> Result<usize, Error> {
         let call = self.inner.call.as_with_body_mut();
         call.maybe_analyze()?;
