@@ -12,14 +12,29 @@ use crate::Error;
 use super::holder::CallHolder;
 
 pub mod state {
-    pub struct Prepare(());
-    pub struct SendRequest(());
-    pub struct Await100(());
-    pub struct SendBody(());
-    pub struct RecvResponse(());
-    pub struct RecvBody(());
-    pub struct Redirect(());
-    pub struct Cleanup(());
+    pub(crate) trait Named {
+        fn name() -> &'static str;
+    }
+
+    macro_rules! flow_state {
+        ($n:tt) => {
+            pub struct $n(());
+            impl Named for $n {
+                fn name() -> &'static str {
+                    stringify!($n)
+                }
+            }
+        };
+    }
+
+    flow_state!(Prepare);
+    flow_state!(SendRequest);
+    flow_state!(Await100);
+    flow_state!(SendBody);
+    flow_state!(RecvResponse);
+    flow_state!(RecvBody);
+    flow_state!(Redirect);
+    flow_state!(Cleanup);
 }
 use self::state::*;
 
@@ -584,5 +599,13 @@ impl fmt::Display for CloseReason {
                 CloseReason::CloseDelimitedBody => "response body is close delimited",
             }
         )
+    }
+}
+
+impl<B, State: Named> fmt::Debug for Flow<B, State> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Flow")
+            .field("state", &State::name())
+            .finish()
     }
 }
