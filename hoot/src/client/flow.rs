@@ -532,6 +532,10 @@ impl<B> Flow<B, Redirect> {
         Ok(Some(next))
     }
 
+    pub fn status(&self) -> StatusCode {
+        self.inner.status.unwrap()
+    }
+
     pub fn must_close_connection(&self) -> bool {
         let maybe_reason = self.inner.close_reason.first();
 
