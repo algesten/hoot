@@ -156,7 +156,10 @@ struct BodyState {
 
 impl BodyState {
     fn need_response_body(&self) -> bool {
-        !matches!(self.reader, Some(BodyReader::NoBody))
+        !matches!(
+            self.reader,
+            Some(BodyReader::NoBody) | Some(BodyReader::LengthDelimited(0))
+        )
     }
 }
 

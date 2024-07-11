@@ -27,6 +27,18 @@ fn with_recv_body() {
 }
 
 #[test]
+#[should_panic]
+fn with_recv_body_0() {
+    let scenario = Scenario::builder()
+        .get("https://a.test")
+        .redirect(StatusCode::FOUND, "https://b.test")
+        .recv_body(b"", false)
+        .build();
+
+    scenario.to_recv_body();
+}
+
+#[test]
 fn absolute_url() {
     let scenario = Scenario::builder()
         .get("https://a.test")
