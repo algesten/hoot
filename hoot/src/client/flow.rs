@@ -128,6 +128,10 @@ impl<B> Flow<B, Prepare> {
         Ok(Flow::wrap(inner))
     }
 
+    pub fn method(&self) -> &Method {
+        self.call().request().method()
+    }
+
     pub fn uri(&self) -> &Uri {
         self.call().request().uri()
     }
