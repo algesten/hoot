@@ -279,3 +279,59 @@ fn dont_keep_auth_header_different_host() {
             \r\n";
     assert_eq!(o[..n].as_str(), cmp);
 }
+
+#[test]
+fn dont_keep_cookie_header() {
+    let scenario = Scenario::builder()
+        .get("https://a.test/foo")
+        .header("x-my", "ya")
+        .header("cookie", "secret=value")
+        .redirect(StatusCode::FOUND, "https://b.test/bar")
+        .build();
+
+    let mut flow = scenario
+        .to_redirect()
+        .as_new_flow(RedirectAuthHeaders::SameHost)
+        .unwrap()
+        .unwrap()
+        .proceed();
+
+    let mut o = vec![0; 1024];
+
+    let n = flow.write(&mut o).unwrap();
+
+    let cmp = "\
+            GET /bar HTTP/1.1\r\n\
+            host: b.test\r\n\
+            x-my: ya\r\n\
+            \r\n";
+    assert_eq!(o[..n].as_str(), cmp);
+}
+
+#[test]
+fn dont_keep_content_length() {
+    let scenario = Scenario::builder()
+        .post("https://a.test/foo")
+        .header("x-my", "ya")
+        .send_body("123", false)
+        .redirect(StatusCode::FOUND, "https://b.test/bar")
+        .build();
+
+    let mut flow = scenario
+        .to_redirect()
+        .as_new_flow(RedirectAuthHeaders::SameHost)
+        .unwrap()
+        .unwrap()
+        .proceed();
+
+    let mut o = vec![0; 1024];
+
+    let n = flow.write(&mut o).unwrap();
+
+    let cmp = "\
+            GET /bar HTTP/1.1\r\n\
+            host: b.test\r\n\
+            x-my: ya\r\n\
+            \r\n";
+    assert_eq!(o[..n].as_str(), cmp);
+}

@@ -41,13 +41,10 @@ pub(crate) struct AmendedRequest<Body> {
     uri: Option<Uri>,
     headers: SmallVec<[(HeaderName, HeaderValue); MAX_EXTRA_HEADERS]>,
     unset: SmallVec<[HeaderName; 3]>,
-    method: Method,
 }
 
 impl<Body> AmendedRequest<Body> {
     pub fn new(request: Request<Body>) -> Self {
-        let method = request.method().clone();
-
         let (parts, body) = request.into_parts();
 
         AmendedRequest {
@@ -55,7 +52,6 @@ impl<Body> AmendedRequest<Body> {
             uri: None,
             headers: SmallVec::new(),
             unset: SmallVec::new(),
-            method,
         }
     }
 
@@ -151,12 +147,8 @@ impl<Body> AmendedRequest<Body> {
             .collect()
     }
 
-    pub fn set_method(&mut self, method: Method) {
-        self.method = method;
-    }
-
     pub fn method(&self) -> &Method {
-        &self.method
+        self.request.method()
     }
 
     pub fn new_uri_from_location(&self, location: &str) -> Result<Uri, Error> {

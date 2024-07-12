@@ -507,12 +507,15 @@ impl<B> Flow<B, Redirect> {
             }
         };
 
+        info!("Redirect to: {} {}", new_method, uri);
+
+        let mut request = previous.take_request();
+        *request.method_mut() = new_method;
+
         // Next state
-        let mut next = Flow::new(previous.take_request())?;
+        let mut next = Flow::new(request)?;
 
         let request = next.inner.call.request_mut();
-
-        info!("Redirect to: {} {}", new_method, uri);
 
         let keep_auth_header = match redirect_auth_headers {
             RedirectAuthHeaders::Never => false,
@@ -521,11 +524,12 @@ impl<B> Flow<B, Redirect> {
 
         // Override with the new uri
         request.set_uri(uri);
-        request.set_method(new_method);
 
         if !keep_auth_header {
             request.unset_header("authorization")?;
         }
+        request.unset_header("cookie")?;
+        request.unset_header("content-length")?;
 
         // TODO(martin): clear out unwanted headers
 
