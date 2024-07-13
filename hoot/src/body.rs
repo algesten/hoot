@@ -298,8 +298,6 @@ impl BodyReader {
     }
 
     pub fn read(&mut self, src: &[u8], dst: &mut [u8]) -> Result<(usize, usize), Error> {
-        trace!("Read body");
-
         // unwrap is ok because we can't be in state RECV_BODY without setting it.
         let part = match self {
             BodyReader::LengthDelimited(_) => self.read_limit(src, dst),
@@ -334,8 +332,6 @@ impl BodyReader {
         };
 
         let (input_used, output_used) = dechunker.parse_input(src, dst)?;
-
-        trace!("Read chunked: {}", input_used);
 
         Ok((input_used, output_used))
     }

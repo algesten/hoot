@@ -74,6 +74,18 @@ pub enum CloseReason {
     CloseDelimitedBody,
 }
 
+impl CloseReason {
+    fn explain(&self) -> &'static str {
+        match self {
+            CloseReason::Http10 => "version is http1.0",
+            CloseReason::ClientConnectionClose => "client sent Connection: close",
+            CloseReason::ServerConnectionClose => "server sent Connection: close",
+            CloseReason::Not100Continue => "got non-100 response before sending body",
+            CloseReason::CloseDelimitedBody => "response body is close delimited",
+        }
+    }
+}
+
 impl<B, S> Flow<B, S> {
     fn wrap(inner: Inner<B>) -> Flow<B, S> {
         Flow {
@@ -479,15 +491,9 @@ impl<B> Flow<B, Redirect> {
         let new_method = if status.is_redirect_retaining_status() {
             if method.need_request_body() {
                 // only resend the request if it cannot have a body
-                info!(
-                    "No redirect ({}) for method {}",
-                    status.as_u16(),
-                    method.as_str()
-                );
                 return Ok(None);
             } else if method == Method::DELETE {
                 // NOTE: DELETE is intentionally excluded: https://stackoverflow.com/questions/299628
-                info!("No redirect ({}) for DELETE", status.as_u16());
                 return Ok(None);
             } else {
                 method.clone()
@@ -498,16 +504,9 @@ impl<B> Flow<B, Redirect> {
             if matches!(*method, Method::GET | Method::HEAD) {
                 method.clone()
             } else {
-                debug!(
-                    "Change redirect ({}) method {} -> GET",
-                    status.as_u16(),
-                    method
-                );
                 Method::GET
             }
         };
-
-        info!("Redirect to: {} {}", new_method, uri);
 
         let mut request = previous.take_request();
         *request.method_mut() = new_method;
@@ -541,14 +540,11 @@ impl<B> Flow<B, Redirect> {
     }
 
     pub fn must_close_connection(&self) -> bool {
-        let maybe_reason = self.inner.close_reason.first();
+        self.close_reason().is_some()
+    }
 
-        if let Some(reason) = maybe_reason {
-            debug!("Close connection because {}", reason);
-            true
-        } else {
-            false
-        }
+    pub fn close_reason(&self) -> Option<&'static str> {
+        self.inner.close_reason.first().map(|s| s.explain())
     }
 
     pub fn proceed(self) -> Flow<B, Cleanup> {
@@ -585,34 +581,15 @@ pub enum RedirectAuthHeaders {
 
 impl<B> Flow<B, Cleanup> {
     pub fn must_close_connection(&self) -> bool {
-        let maybe_reason = self.inner.close_reason.first();
+        self.close_reason().is_some()
+    }
 
-        if let Some(reason) = maybe_reason {
-            debug!("Close connection because {}", reason);
-            true
-        } else {
-            false
-        }
+    pub fn close_reason(&self) -> Option<&'static str> {
+        self.inner.close_reason.first().map(|s| s.explain())
     }
 }
 
 // ////////////////////////////////////////////////////////////////////////////////////////////
-
-impl fmt::Display for CloseReason {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                CloseReason::Http10 => "version is http1.0",
-                CloseReason::ClientConnectionClose => "client sent Connection: close",
-                CloseReason::ServerConnectionClose => "server sent Connection: close",
-                CloseReason::Not100Continue => "got non-100 response before sending body",
-                CloseReason::CloseDelimitedBody => "response body is close delimited",
-            }
-        )
-    }
-}
 
 impl<B, State: Named> fmt::Debug for Flow<B, State> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
