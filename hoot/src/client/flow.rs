@@ -2,7 +2,9 @@ use std::fmt;
 use std::marker::PhantomData;
 
 use http::uri::Scheme;
-use http::{HeaderName, HeaderValue, Method, Request, Response, StatusCode, Uri, Version};
+use http::{
+    HeaderMap, HeaderName, HeaderValue, Method, Request, Response, StatusCode, Uri, Version,
+};
 use smallvec::SmallVec;
 
 use crate::ext::{HeaderIterExt, MethodExt, StatusExt};
@@ -146,6 +148,18 @@ impl<B> Flow<B, Prepare> {
 
     pub fn uri(&self) -> &Uri {
         self.call().request().uri()
+    }
+
+    pub fn version(&self) -> Version {
+        self.call().request().version()
+    }
+
+    pub fn headers_map(&self) -> HeaderMap<HeaderValue> {
+        let mut map = HeaderMap::new();
+        for (k, v) in self.call().request().headers() {
+            map.insert(k, v.clone());
+        }
+        map
     }
 
     pub fn header<K, V>(&mut self, key: K, value: V) -> Result<(), Error>

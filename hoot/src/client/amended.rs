@@ -151,6 +151,10 @@ impl<Body> AmendedRequest<Body> {
         self.request.method()
     }
 
+    pub(crate) fn version(&self) -> Version {
+        self.request.version()
+    }
+
     pub fn new_uri_from_location(&self, location: &str) -> Result<Uri, Error> {
         let base = Url::parse(&self.uri().to_string()).expect("base uri to be a url");
 
