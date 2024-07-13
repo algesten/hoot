@@ -216,6 +216,9 @@ impl<'a, B> Call<WithoutBody, B> {
 
         let output_used = w.len();
 
+        // Unwrap is ok because we will only write ASCII
+        debug!("{:?}", std::str::from_utf8(&output[..output_used]).unwrap());
+
         Ok(output_used)
     }
 
@@ -278,9 +281,11 @@ impl<'a, B> Call<WithBody, B> {
         let mut w = Writer::new(output);
 
         let mut input_used = 0;
+        let mut log_prelude = false;
 
         if self.is_prelude() {
             try_write_prelude(&self.request, &mut self.state, &mut w)?;
+            log_prelude = true;
         } else if self.is_body() {
             if !input.is_empty() && self.state.writer.is_ended() {
                 return Err(Error::BodyContentAfterFinish);
@@ -294,6 +299,11 @@ impl<'a, B> Call<WithBody, B> {
         }
 
         let output_used = w.len();
+
+        if log_prelude {
+            // Unwrap is ok because we will only write ASCII
+            debug!("{:?}", std::str::from_utf8(&output[..output_used]).unwrap());
+        }
 
         Ok((input_used, output_used))
     }
