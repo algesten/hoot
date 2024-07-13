@@ -154,14 +154,6 @@ impl<B> Flow<B, Prepare> {
         self.call().request().version()
     }
 
-    pub fn headers_map(&self) -> HeaderMap<HeaderValue> {
-        let mut map = HeaderMap::new();
-        for (k, v) in self.call().request().headers() {
-            map.insert(k, v.clone());
-        }
-        map
-    }
-
     pub fn header<K, V>(&mut self, key: K, value: V) -> Result<(), Error>
     where
         HeaderName: TryFrom<K>,
@@ -186,6 +178,27 @@ impl<B> Flow<B, SendRequest> {
             CallHolder::WithBody(v) => v.write(&[], output).map(|r| r.1),
             _ => unreachable!(),
         }
+    }
+
+    pub fn method(&self) -> &Method {
+        self.call().request().method()
+    }
+
+    pub fn uri(&self) -> &Uri {
+        self.call().request().uri()
+    }
+
+    pub fn version(&self) -> Version {
+        self.call().request().version()
+    }
+
+    pub fn headers_map(&mut self) -> Result<HeaderMap, Error> {
+        self.call_mut().analyze_request()?;
+        let mut map = HeaderMap::new();
+        for (k, v) in self.call().request().headers() {
+            map.insert(k, v.clone());
+        }
+        Ok(map)
     }
 
     pub fn can_proceed(&self) -> bool {
@@ -319,7 +332,7 @@ impl<B> Flow<B, SendBody> {
 
     pub fn calculate_output_overhead(&mut self, output_len: usize) -> Result<usize, Error> {
         let call = self.inner.call.as_with_body_mut();
-        call.maybe_analyze()?;
+        call.analyze_request()?;
 
         Ok(if call.is_chunked() {
             // The + 1 and floor() is to make even powers of 16 right.

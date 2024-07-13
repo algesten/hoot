@@ -86,4 +86,13 @@ impl<B> CallHolder<B> {
             _ => unreachable!(),
         }
     }
+
+    pub fn analyze_request(&mut self) -> Result<(), Error> {
+        match self {
+            CallHolder::WithoutBody(v) => v.analyze_request(),
+            CallHolder::WithBody(v) => v.analyze_request(),
+            CallHolder::RecvResponse(v) => v.analyze_request(),
+            CallHolder::RecvBody(v) => v.analyze_request(),
+        }
+    }
 }

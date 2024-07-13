@@ -98,7 +98,11 @@ impl<State, B> Call<State, B> {
         })
     }
 
-    fn analyze_request(&mut self) -> Result<(), Error> {
+    pub(crate) fn analyze_request(&mut self) -> Result<(), Error> {
+        if self.analyzed {
+            return Ok(());
+        }
+
         let info = self.request.analyze(self.state.writer)?;
 
         if !info.req_host_header {
@@ -119,6 +123,7 @@ impl<State, B> Call<State, B> {
 
         self.state.writer = info.body_mode;
 
+        self.analyzed = true;
         Ok(())
     }
 
@@ -206,10 +211,7 @@ impl<'a, B> Call<WithoutBody, B> {
     /// assert_eq!(s, "HEAD /page HTTP/1.1\r\nhost: foo.test\r\n\r\n");
     /// ```
     pub fn write(&mut self, output: &mut [u8]) -> Result<usize, Error> {
-        if !self.analyzed {
-            self.analyze_request()?;
-            self.analyzed = true;
-        }
+        self.analyze_request()?;
 
         let mut w = Writer::new(output);
         try_write_prelude(&self.request, &mut self.state, &mut w)?;
@@ -273,7 +275,7 @@ impl<'a, B> Call<WithBody, B> {
     /// );
     /// ```
     pub fn write(&mut self, input: &[u8], output: &mut [u8]) -> Result<(usize, usize), Error> {
-        self.maybe_analyze()?;
+        self.analyze_request()?;
 
         let mut w = Writer::new(output);
 
@@ -309,14 +311,6 @@ impl<'a, B> Call<WithBody, B> {
 
         self.state.writer.consume_direct_write(amount);
 
-        Ok(())
-    }
-
-    pub(crate) fn maybe_analyze(&mut self) -> Result<(), Error> {
-        if !self.analyzed {
-            self.analyze_request()?;
-            self.analyzed = true;
-        }
         Ok(())
     }
 
