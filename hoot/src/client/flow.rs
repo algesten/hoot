@@ -9,7 +9,7 @@ use smallvec::SmallVec;
 
 use crate::ext::{HeaderIterExt, MethodExt, StatusExt};
 use crate::parser::try_parse_response;
-use crate::Error;
+use crate::{BodyMode, Error};
 
 use super::holder::CallHolder;
 
@@ -467,6 +467,10 @@ impl<B> Flow<B, RecvBody> {
     pub fn can_proceed(&self) -> bool {
         let call = self.inner.call.as_recv_body();
         call.is_ended() || call.is_close_delimited()
+    }
+
+    pub fn body_mode(&self) -> BodyMode {
+        self.call().body_mode()
     }
 
     pub fn proceed(self) -> Option<RecvBodyResult<B>> {

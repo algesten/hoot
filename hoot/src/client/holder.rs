@@ -1,7 +1,7 @@
 use http::Request;
 
 use crate::ext::MethodExt;
-use crate::Error;
+use crate::{BodyMode, Error};
 
 use super::amended::AmendedRequest;
 use super::call::state::{RecvBody, RecvResponse, WithBody, WithoutBody};
@@ -93,6 +93,15 @@ impl<B> CallHolder<B> {
             CallHolder::WithBody(v) => v.analyze_request(),
             CallHolder::RecvResponse(v) => v.analyze_request(),
             CallHolder::RecvBody(v) => v.analyze_request(),
+        }
+    }
+
+    pub(crate) fn body_mode(&self) -> BodyMode {
+        match self {
+            CallHolder::WithoutBody(v) => v.body_mode(),
+            CallHolder::WithBody(v) => v.body_mode(),
+            CallHolder::RecvResponse(v) => v.body_mode(),
+            CallHolder::RecvBody(v) => v.body_mode(),
         }
     }
 }

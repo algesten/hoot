@@ -193,7 +193,31 @@ pub(crate) enum BodyReader {
     CloseDelimited,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum BodyMode {
+    /// No body is expected either due to the status or method.
+    NoBody,
+    /// Delimited by content-length.
+    /// The value is what's left to receive.
+    LengthDelimited(u64),
+    /// Chunked transfer encoding
+    Chunked,
+    /// Expect remote to close at end of body.
+    CloseDelimited,
+}
+
 impl BodyReader {
+    pub fn body_mode(&self) -> BodyMode {
+        match self {
+            BodyReader::NoBody => BodyMode::NoBody,
+            // TODO(martin): if we read body_mode at the wrong time, this v is
+            // not the total length, but the the remaining.
+            BodyReader::LengthDelimited(v) => BodyMode::LengthDelimited(*v),
+            BodyReader::Chunked(_) => BodyMode::Chunked,
+            BodyReader::CloseDelimited => BodyMode::CloseDelimited,
+        }
+    }
+
     // pub fn for_request<'a>(
     //     http10: bool,
     //     method: &Method,

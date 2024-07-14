@@ -7,7 +7,7 @@ use http::{HeaderName, HeaderValue, Method, Request, Response, StatusCode, Versi
 use crate::body::{BodyReader, BodyWriter};
 use crate::parser::try_parse_response;
 use crate::util::Writer;
-use crate::Error;
+use crate::{BodyMode, Error};
 
 use super::amended::AmendedRequest;
 use super::MAX_RESPONSE_HEADERS;
@@ -149,6 +149,13 @@ impl<State, B> Call<State, B> {
 
     pub(crate) fn amended_mut(&mut self) -> &mut AmendedRequest<B> {
         &mut self.request
+    }
+
+    pub(crate) fn body_mode(&self) -> BodyMode {
+        self.state
+            .reader
+            .map(|r| r.body_mode())
+            .unwrap_or(BodyMode::Chunked)
     }
 }
 

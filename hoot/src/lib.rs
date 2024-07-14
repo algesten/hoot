@@ -43,6 +43,7 @@ mod ext;
 mod util;
 
 mod body;
+pub use body::BodyMode;
 
 pub mod client;
 
