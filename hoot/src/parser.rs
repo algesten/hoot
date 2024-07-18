@@ -3,11 +3,12 @@ use httparse::Status;
 
 use crate::Error;
 
-pub fn try_parse_response<'a, 'b: 'a>(
+pub fn try_parse_response<'a, const N: usize>(
     input: &'a [u8],
-    headers: &'b mut [httparse::Header<'a>],
 ) -> Result<Option<(usize, Response<()>)>, Error> {
-    let mut res = httparse::Response::new(headers);
+    let mut headers = [httparse::EMPTY_HEADER; N]; // 100 headers ~3kb
+
+    let mut res = httparse::Response::new(&mut headers);
 
     let maybe_input_used = match res.parse(input) {
         Ok(v) => v,
@@ -62,6 +63,6 @@ mod test {
             Content-Type: text/plain\r\n\
             Content-Length: 100\r\n\r\n";
 
-        try_parse_response(bytes.as_bytes(), &mut []).expect_err("too many headers");
+        try_parse_response::<0>(bytes.as_bytes()).expect_err("too many headers");
     }
 }

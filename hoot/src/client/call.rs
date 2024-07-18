@@ -438,9 +438,8 @@ impl<'a, B> Call<RecvResponse, B> {
     /// Once the response headers are succesfully read, use [`Call::into_body()`] to proceed
     /// reading the response body.
     pub fn try_response(&mut self, input: &[u8]) -> Result<Option<(usize, Response<()>)>, Error> {
-        let mut headers = [httparse::EMPTY_HEADER; MAX_RESPONSE_HEADERS]; // ~3k for 100 headers
-
-        let (input_used, response) = match try_parse_response(input, &mut headers)? {
+        // ~3k for 100 headers
+        let (input_used, response) = match try_parse_response::<MAX_RESPONSE_HEADERS>(input)? {
             Some(v) => v,
             None => return Ok(None),
         };

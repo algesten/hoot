@@ -253,7 +253,7 @@ impl<B> Flow<B, Await100> {
         //   HTTP/1.1 100 Continue\r\n\r\n
         //
         // There should be no headers.
-        match try_parse_response(input, &mut []) {
+        match try_parse_response::<0>(input) {
             Ok(v) => match v {
                 Some((input_used, response)) => {
                     self.inner.await_100_continue = false;
