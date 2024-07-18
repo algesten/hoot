@@ -82,6 +82,12 @@ pub enum Error {
 
     #[error("body is chunked")]
     BodyIsChunked,
+
+    #[error("http request is missing a method")]
+    RequestMissingMethod,
+
+    #[error("http request invalid method")]
+    RequestInvalidMethod,
 }
 
 impl From<httparse::Error> for Error {

@@ -47,4 +47,4 @@ pub use body::BodyMode;
 
 pub mod client;
 
-mod parser;
+pub mod parser;

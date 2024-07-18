@@ -1,4 +1,4 @@
-use http::{Response, StatusCode, Version};
+use http::{Method, Request, Response, StatusCode, Version};
 use httparse::Status;
 
 use crate::Error;
@@ -51,6 +51,56 @@ pub fn try_parse_response<'a, const N: usize>(
     let response = builder.body(()).expect("a valid response");
 
     Ok(Some((input_used, response)))
+}
+
+pub fn try_parse_request<'a, const N: usize>(
+    input: &'a [u8],
+) -> Result<Option<(usize, Request<()>)>, Error> {
+    let mut headers = [httparse::EMPTY_HEADER; N]; // 100 headers ~3kb
+
+    let mut req = httparse::Request::new(&mut headers);
+
+    let maybe_input_used = match req.parse(input) {
+        Ok(v) => v,
+        Err(e) => {
+            return Err(if e == httparse::Error::TooManyHeaders {
+                // For expect-100 we use this value to detect that the server
+                // sent a regular response instead of a 100-continue.
+                Error::HttpParseTooManyHeaders
+            } else {
+                e.into()
+            });
+        }
+    };
+
+    let input_used = match maybe_input_used {
+        Status::Complete(v) => v,
+        Status::Partial => return Ok(None),
+    };
+
+    let version = {
+        let v = req.version.ok_or(Error::MissingResponseVersion)?;
+        match v {
+            0 => Version::HTTP_10,
+            1 => Version::HTTP_11,
+            _ => return Err(Error::UnsupportedVersion),
+        }
+    };
+
+    let method = {
+        let v = req.method.ok_or(Error::RequestMissingMethod)?;
+        Method::from_bytes(v.as_bytes()).map_err(|_| Error::RequestInvalidMethod)?
+    };
+
+    let mut builder = Request::builder().version(version).method(method);
+
+    for h in req.headers {
+        builder = builder.header(h.name, h.value);
+    }
+
+    let request = builder.body(()).expect("a valid response");
+
+    Ok(Some((input_used, request)))
 }
 
 #[cfg(test)]
