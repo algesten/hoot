@@ -66,9 +66,21 @@ impl Dechunker {
             None => return Ok(false),
         };
 
-        let len_end = src.iter().position(|c| *c == b';').unwrap_or(i);
+        const SANITY_CHECK: usize = 20;
+
+        // Some sanity check for how long the chunk length is
+        if i > SANITY_CHECK {
+            return Err(Error::ChunkExpectedCrLf);
+        }
+        let maybe_meta = src.iter().take(100).position(|c| *c == b';');
+
+        let len_end = maybe_meta.unwrap_or(SANITY_CHECK + 1).min(i);
         let len_str = str::from_utf8(&src[..len_end]).map_err(|_| Error::ChunkLenNotAscii)?;
-        let len = usize::from_str_radix(len_str, 16).map_err(|_| Error::ChunkLenNotANumber)?;
+
+        let len = usize::from_str_radix(len_str, 16).map_err(|e| {
+            println!("{:?}", e);
+            Error::ChunkLenNotANumber
+        })?;
 
         pos.index_in += i + 2;
         *self = if len == 0 {
@@ -150,6 +162,15 @@ mod test {
         let mut b = [0; 1024];
         assert_eq!(d.parse_input(b"2;meta\r", &mut b)?, (0, 0));
         assert_eq!(d.parse_input(b"2;meta\r\n", &mut b)?, (8, 0));
+        Ok(())
+    }
+
+    #[test]
+    fn test_dechunk_size_not_meta() -> Result<(), Error> {
+        let mut d = Dechunker::new();
+        let mut b = [0; 1024];
+        assert_eq!(d.parse_input(b"9\r\nnot meta;\r\n", &mut b)?, (14, 9));
+        assert_eq!(String::from_utf8_lossy(&b[..9]), "not meta;");
         Ok(())
     }
 
