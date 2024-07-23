@@ -78,12 +78,11 @@ impl Dechunker {
         let maybe_meta = src.iter().take(100).position(|c| *c == b';');
 
         let len_end = maybe_meta.unwrap_or(SANITY_CHECK + 1).min(i);
-        let len_str = str::from_utf8(&src[..len_end]).map_err(|_| Error::ChunkLenNotAscii)?;
+        let len_str = str::from_utf8(&src[..len_end])
+            .map_err(|_| Error::ChunkLenNotAscii)?
+            .trim();
 
-        let len = usize::from_str_radix(len_str, 16).map_err(|e| {
-            println!("{:?}", e);
-            Error::ChunkLenNotANumber
-        })?;
+        let len = usize::from_str_radix(len_str, 16).map_err(|_| Error::ChunkLenNotANumber)?;
 
         pos.index_in += i + 2;
         *self = if len == 0 {
