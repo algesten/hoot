@@ -505,7 +505,11 @@ impl<B> Flow<B, Redirect> {
 
         let location = match header.to_str() {
             Ok(v) => v,
-            Err(_) => return Err(Error::BadLocationHeader),
+            Err(_) => {
+                return Err(Error::BadLocationHeader(
+                    String::from_utf8_lossy(header.as_bytes()).to_string(),
+                ))
+            }
         };
 
         // Previous request

@@ -74,8 +74,8 @@ pub enum Error {
     #[error("missing a location header")]
     NoLocationHeader,
 
-    #[error("location header is malformed")]
-    BadLocationHeader,
+    #[error("location header is malformed: {0}")]
+    BadLocationHeader(String),
 
     #[error("received headers with 100-continue response")]
     HeadersWith100,

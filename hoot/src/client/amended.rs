@@ -158,7 +158,9 @@ impl<Body> AmendedRequest<Body> {
     pub fn new_uri_from_location(&self, location: &str) -> Result<Uri, Error> {
         let base = Url::parse(&self.uri().to_string()).expect("base uri to be a url");
 
-        let url = base.join(location).map_err(|_| Error::BadLocationHeader)?;
+        let url = base
+            .join(location)
+            .map_err(|_| Error::BadLocationHeader(location.to_string()))?;
 
         let uri = url.to_string().parse::<Uri>().expect("new uri to parse");
 
