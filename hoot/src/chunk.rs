@@ -9,9 +9,11 @@ pub(crate) enum Dechunker {
     Chunk(usize),
     CrLf,
     Ending,
+    Trailer,
     Ended,
 }
 
+#[derive(Debug)]
 struct Pos {
     index_in: usize,
     index_out: usize,
@@ -33,7 +35,8 @@ impl Dechunker {
                 Dechunker::Size => self.read_size(src, &mut pos)?,
                 Dechunker::Chunk(_) => self.read_data(src, dst, &mut pos)?,
                 Dechunker::CrLf => self.expect_crlf(src, &mut pos)?,
-                Dechunker::Ending => self.expect_crlf(src, &mut pos)?,
+                Dechunker::Ending => self.trailer_or_ended(src, &mut pos)?,
+                Dechunker::Trailer => self.trailer(src, &mut pos)?,
                 Dechunker::Ended => false,
             };
 
@@ -129,11 +132,42 @@ impl Dechunker {
         }
 
         pos.index_in += 2;
-        if *self == Dechunker::Ending {
-            *self = Dechunker::Ended;
+        *self = Self::Size;
+
+        Ok(true)
+    }
+
+    fn trailer_or_ended(&mut self, src: &[u8], pos: &mut Pos) -> Result<bool, Error> {
+        let src = &src[pos.index_in..];
+
+        let i = match find_crlf(src) {
+            Some(v) => v,
+            None => return Ok(false),
+        };
+
+        if i == 0 {
+            pos.index_in += 2;
+            *self = Self::Ended;
         } else {
-            *self = Self::Size;
+            // Non-crlf before
+            *self = Self::Trailer;
         }
+
+        Ok(true)
+    }
+
+    fn trailer(&mut self, src: &[u8], pos: &mut Pos) -> Result<bool, Error> {
+        let src = &src[pos.index_in..];
+
+        let i = match find_crlf(src) {
+            Some(v) => v,
+            None => return Ok(false),
+        };
+        assert!(i > 0);
+
+        // advance the trailer, and 2 for the crlf.
+        pos.index_in += i + 2;
+        *self = Self::Ending;
 
         Ok(true)
     }
