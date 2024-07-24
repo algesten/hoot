@@ -162,7 +162,10 @@ impl<Body> AmendedRequest<Body> {
             .join(location)
             .map_err(|_| Error::BadLocationHeader(location.to_string()))?;
 
-        let uri = url.to_string().parse::<Uri>().expect("new uri to parse");
+        let uri = url
+            .to_string()
+            .parse::<Uri>()
+            .map_err(|_| Error::BadLocationHeader(url.to_string()))?;
 
         Ok(uri)
     }
