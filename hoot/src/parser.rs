@@ -3,8 +3,8 @@ use httparse::Status;
 
 use crate::Error;
 
-pub fn try_parse_response<'a, const N: usize>(
-    input: &'a [u8],
+pub fn try_parse_response<const N: usize>(
+    input: &[u8],
 ) -> Result<Option<(usize, Response<()>)>, Error> {
     let mut headers = [httparse::EMPTY_HEADER; N]; // 100 headers ~3kb
 
@@ -53,8 +53,8 @@ pub fn try_parse_response<'a, const N: usize>(
     Ok(Some((input_used, response)))
 }
 
-pub fn try_parse_request<'a, const N: usize>(
-    input: &'a [u8],
+pub fn try_parse_request<const N: usize>(
+    input: &[u8],
 ) -> Result<Option<(usize, Request<()>)>, Error> {
     let mut headers = [httparse::EMPTY_HEADER; N]; // 100 headers ~3kb
 

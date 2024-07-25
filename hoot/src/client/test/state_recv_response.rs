@@ -29,7 +29,7 @@ fn receive_complete_response() {
     let scenario = Scenario::builder().get("https://q.test").build();
     let mut flow = scenario.to_recv_response();
 
-    let (input_used, maybe_response) = flow.try_response(&RESPONSE).unwrap();
+    let (input_used, maybe_response) = flow.try_response(RESPONSE).unwrap();
     assert_eq!(input_used, 66);
     assert!(maybe_response.is_some());
 
@@ -68,7 +68,7 @@ fn prepended_100_continue() {
     assert!(!flow.can_proceed());
 
     // full response after prepended 100-continue
-    let (input_used, maybe_response) = flow.try_response(&RESPONSE).unwrap();
+    let (input_used, maybe_response) = flow.try_response(RESPONSE).unwrap();
     assert_eq!(input_used, 66);
     assert!(maybe_response.is_some());
     assert!(flow.can_proceed());
@@ -85,7 +85,7 @@ fn expect_100_without_100_continue() {
     let mut flow = scenario.to_recv_response();
 
     // full response and no 100-continue
-    let (input_used, maybe_response) = flow.try_response(&RESPONSE).unwrap();
+    let (input_used, maybe_response) = flow.try_response(RESPONSE).unwrap();
     assert_eq!(input_used, 66);
     assert!(maybe_response.is_some());
     assert!(flow.can_proceed());

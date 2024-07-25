@@ -69,7 +69,7 @@ fn close_due_to_http10() {
 
     let flow = scenario.to_cleanup();
     let inner = flow.inner();
-    assert_eq!(*inner.close_reason.get(0).unwrap(), CloseReason::Http10);
+    assert_eq!(*inner.close_reason.first().unwrap(), CloseReason::Http10);
 
     assert!(flow.must_close_connection());
 }
@@ -84,7 +84,7 @@ fn close_due_to_client_connection_close() {
     let flow = scenario.to_cleanup();
     let inner = flow.inner();
     assert_eq!(
-        *inner.close_reason.get(0).unwrap(),
+        *inner.close_reason.first().unwrap(),
         CloseReason::ClientConnectionClose
     );
 
@@ -106,7 +106,7 @@ fn close_due_to_server_connection_close() {
     let flow = scenario.to_cleanup();
     let inner = flow.inner();
     assert_eq!(
-        *inner.close_reason.get(0).unwrap(),
+        *inner.close_reason.first().unwrap(),
         CloseReason::ServerConnectionClose
     );
 
@@ -133,7 +133,7 @@ fn close_due_to_not_100_continue() {
 
     let inner = flow.inner();
     assert_eq!(
-        *inner.close_reason.get(0).unwrap(),
+        *inner.close_reason.first().unwrap(),
         CloseReason::Not100Continue
     );
 }
@@ -146,7 +146,7 @@ fn close_due_to_close_delimited_body() {
     let flow = scenario.to_cleanup();
     let inner = flow.inner();
     assert_eq!(
-        *inner.close_reason.get(0).unwrap(),
+        *inner.close_reason.first().unwrap(),
         CloseReason::CloseDelimitedBody
     );
 

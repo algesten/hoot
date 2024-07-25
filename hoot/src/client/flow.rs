@@ -606,8 +606,8 @@ fn can_redirect_auth_header(prev: &Uri, next: &Uri) -> bool {
 ///
 /// * `Never` never preserves `authorization` header in redirects.
 /// * `SameHost` send the authorization header in redirects only if the host of the redirect is
-/// the same of the previous request, and both use the same scheme (or switch to a more secure one, i.e
-/// we can redirect from `http` to `https`, but not the reverse).
+///   the same of the previous request, and both use the same scheme (or switch to a more secure one, i.e
+///   we can redirect from `http` to `https`, but not the reverse).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum RedirectAuthHeaders {

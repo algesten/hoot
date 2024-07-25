@@ -39,9 +39,7 @@ impl Scenario {
     pub fn to_send_request(&self) -> Flow<(), SendRequest> {
         let flow = self.to_prepare();
 
-        let flow = flow.proceed();
-
-        flow
+        flow.proceed()
     }
 
     pub fn to_send_body(&self) -> Flow<(), SendBody> {

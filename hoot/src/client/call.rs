@@ -200,7 +200,7 @@ impl Phase {
     }
 }
 
-impl<'a, B> Call<WithoutBody, B> {
+impl<B> Call<WithoutBody, B> {
     /// Write the request to the output buffer
     ///
     /// Returns how much of the output buffer that was used.
@@ -241,7 +241,7 @@ impl<'a, B> Call<WithoutBody, B> {
     }
 }
 
-impl<'a, B> Call<WithBody, B> {
+impl<B> Call<WithBody, B> {
     /// Write a request, and consecutive body to the output buffer
     ///
     /// The first argument `input` is the body input buffer. If the request contained
@@ -427,7 +427,7 @@ where
     }
 }
 
-impl<'a, B> Call<RecvResponse, B> {
+impl<B> Call<RecvResponse, B> {
     /// Try reading response headers
     ///
     /// A response is only possible once the `input` holds all the HTTP response
@@ -553,7 +553,7 @@ impl<B> Call<RecvBody, B> {
 
 // pub struct Trailer(());
 
-impl<'a, State, B> fmt::Debug for Call<State, B> {
+impl<State, B> fmt::Debug for Call<State, B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Call")
             .field("phase", &self.state.phase)
