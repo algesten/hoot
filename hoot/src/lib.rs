@@ -32,6 +32,9 @@
 #![allow(clippy::uninlined_format_args)]
 // #![deny(missing_docs)]
 
+#[macro_use]
+extern crate log;
+
 // Re-export the basis for this library.
 pub use http;
 

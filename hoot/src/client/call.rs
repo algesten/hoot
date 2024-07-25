@@ -6,7 +6,7 @@ use http::{HeaderName, HeaderValue, Method, Request, Response, StatusCode, Versi
 
 use crate::body::{BodyReader, BodyWriter};
 use crate::parser::try_parse_response;
-use crate::util::Writer;
+use crate::util::{log_data, Writer};
 use crate::{BodyMode, Error};
 
 use super::amended::AmendedRequest;
@@ -443,6 +443,8 @@ impl<'a, B> Call<RecvResponse, B> {
             Some(v) => v,
             None => return Ok(None),
         };
+
+        log_data(&input[..input_used]);
 
         let http10 = response.version() == Version::HTTP_10;
         let status = response.status().as_u16();

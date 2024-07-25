@@ -4,7 +4,7 @@ use std::io::Write;
 use http::{HeaderName, HeaderValue, Method};
 
 use crate::chunk::Dechunker;
-use crate::util::{compare_lowercase_ascii, Writer};
+use crate::util::{compare_lowercase_ascii, log_data, Writer};
 use crate::Error;
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -329,6 +329,8 @@ impl BodyReader {
             BodyReader::CloseDelimited => self.read_unlimit(src, dst),
             BodyReader::NoBody => return Ok((0, 0)),
         }?;
+
+        log_data(&src[..part.0]);
 
         Ok(part)
     }

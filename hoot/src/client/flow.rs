@@ -89,11 +89,18 @@ impl CloseReason {
 }
 
 impl<B, S> Flow<B, S> {
-    fn wrap(inner: Inner<B>) -> Flow<B, S> {
-        Flow {
+    fn wrap(inner: Inner<B>) -> Flow<B, S>
+    where
+        S: Named,
+    {
+        let wrapped = Flow {
             inner,
             _ph: PhantomData,
-        }
+        };
+
+        debug!("{:?}", wrapped);
+
+        wrapped
     }
 
     fn call(&self) -> &CallHolder<B> {
@@ -628,8 +635,6 @@ impl<B> Flow<B, Cleanup> {
 
 impl<B, State: Named> fmt::Debug for Flow<B, State> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Flow")
-            .field("state", &State::name())
-            .finish()
+        write!(f, "Flow<{}>", State::name())
     }
 }
