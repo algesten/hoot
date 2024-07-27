@@ -53,6 +53,57 @@ pub fn try_parse_response<const N: usize>(
     Ok(Some((input_used, response)))
 }
 
+pub fn try_parse_partial_response<const N: usize>(
+    input: &[u8],
+) -> Result<Option<Response<()>>, Error> {
+    let mut headers = [httparse::EMPTY_HEADER; N]; // 100 headers ~3kb
+
+    let mut res = httparse::Response::new(&mut headers);
+
+    match res.parse(input) {
+        Ok(_) => {}
+        Err(e) => {
+            return Err(if e == httparse::Error::TooManyHeaders {
+                // For expect-100 we use this value to detect that the server
+                // sent a regular response instead of a 100-continue.
+                Error::HttpParseTooManyHeaders
+            } else {
+                e.into()
+            });
+        }
+    };
+
+    let version = {
+        let v = res.version.ok_or(Error::MissingResponseVersion)?;
+        match v {
+            0 => Version::HTTP_10,
+            1 => Version::HTTP_11,
+            _ => return Ok(None),
+        }
+    };
+
+    let status = {
+        let v = match res.code {
+            Some(v) => v,
+            None => return Ok(None),
+        };
+        StatusCode::from_u16(v).map_err(|_| Error::ResponseInvalidStatus)?
+    };
+
+    let mut builder = Response::builder().version(version).status(status);
+
+    for h in res.headers {
+        if h.name.is_empty() || h.value.is_empty() {
+            break;
+        }
+        builder = builder.header(h.name, h.value);
+    }
+
+    let response = builder.body(()).expect("a valid response");
+
+    Ok(Some(response))
+}
+
 pub fn try_parse_request<const N: usize>(
     input: &[u8],
 ) -> Result<Option<(usize, Request<()>)>, Error> {

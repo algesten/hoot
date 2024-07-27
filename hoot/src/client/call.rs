@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 use http::{HeaderName, HeaderValue, Method, Request, Response, StatusCode, Version};
 
 use crate::body::{BodyReader, BodyWriter};
-use crate::parser::try_parse_response;
+use crate::parser::{try_parse_partial_response, try_parse_response};
 use crate::util::{log_data, Writer};
 use crate::{BodyMode, Error};
 
@@ -441,7 +441,33 @@ impl<B> Call<RecvResponse, B> {
         // ~3k for 100 headers
         let (input_used, response) = match try_parse_response::<MAX_RESPONSE_HEADERS>(input)? {
             Some(v) => v,
-            None => return Ok(None),
+            None => {
+                // TODO(martin): I don't like this code. hoot's mission is to be correct HTTP/1.1
+                // and this is a hack to allow for broken servers.
+                //
+                // As a special case, to handle broken servers that does a redirect without
+                // the final trailing \r\n, we try parsing the response as partial, and
+                // if it is a redirect, we can allow the request to continue.
+                if let Some(mut r) = try_parse_partial_response::<MAX_RESPONSE_HEADERS>(input)? {
+                    // A redirection must have a location header.
+                    let is_complete_redirection =
+                        r.status().is_redirection() && r.headers().contains_key("location");
+
+                    if is_complete_redirection {
+                        // Insert a synthetic connection: close, since the connection is
+                        // not valid after using a partial request.
+                        debug!("Partial redirection response, insert fake connection: close");
+                        r.headers_mut()
+                            .insert("connection", HeaderValue::from_static("close"));
+
+                        (input.len(), r)
+                    } else {
+                        return Ok(None);
+                    }
+                } else {
+                    return Ok(None);
+                }
+            }
         };
 
         log_data(&input[..input_used]);
