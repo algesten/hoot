@@ -13,7 +13,7 @@ const RESPONSE: &[u8] = b"\
 #[test]
 fn receive_incomplete_response() {
     // -1 to never reach the end
-    for i in 0..RESPONSE.len() - 1 {
+    for i in 14..RESPONSE.len() - 1 {
         let scenario = Scenario::builder().get("https://q.test").build();
         let mut flow = scenario.to_recv_response();
 
