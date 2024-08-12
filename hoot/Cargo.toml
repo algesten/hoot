@@ -1,6 +1,6 @@
 [package]
 name = "hoot"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 authors = ["Martin Algesten <martin@algesten.se>"]
 description = "http 1.1 library"
@@ -10,10 +10,6 @@ repository = "https://github.com/algesten/hoot"
 
 # MSRV
 rust-version = "1.61"
-
-[package.metadata.docs.rs]
-features = ["all"]
-rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 
