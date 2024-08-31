@@ -161,6 +161,10 @@ impl<B> Flow<B, Prepare> {
         self.call().request().version()
     }
 
+    pub fn headers(&self) -> &HeaderMap {
+        self.call().request().original_request_headers()
+    }
+
     pub fn header<K, V>(&mut self, key: K, value: V) -> Result<(), Error>
     where
         HeaderName: TryFrom<K>,

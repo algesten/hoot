@@ -1,6 +1,6 @@
 use std::mem;
 
-use http::{HeaderName, HeaderValue, Method, Request, Uri, Version};
+use http::{HeaderMap, HeaderName, HeaderValue, Method, Request, Uri, Version};
 use smallvec::SmallVec;
 use url::Url;
 
@@ -112,6 +112,10 @@ impl<Body> AmendedRequest<Body> {
             .map_err(|e| Error::BadHeader(e.to_string()))?;
         self.unset.push(name);
         Ok(())
+    }
+
+    pub fn original_request_headers(&self) -> &HeaderMap {
+        self.request.headers()
     }
 
     pub fn headers(&self) -> impl Iterator<Item = (&HeaderName, &HeaderValue)> {
