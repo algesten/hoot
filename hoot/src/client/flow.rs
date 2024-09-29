@@ -5,7 +5,7 @@ use http::uri::Scheme;
 use http::{
     HeaderMap, HeaderName, HeaderValue, Method, Request, Response, StatusCode, Uri, Version,
 };
-use smallvec::SmallVec;
+use tinyvec::ArrayVec;
 
 use crate::ext::{HeaderIterExt, MethodExt, StatusExt};
 use crate::parser::try_parse_response;
@@ -49,7 +49,7 @@ pub struct Flow<B, State> {
 #[derive(Debug)]
 pub(crate) struct Inner<B> {
     pub call: CallHolder<B>,
-    pub close_reason: SmallVec<[CloseReason; 4]>,
+    pub close_reason: ArrayVec<[CloseReason; 4]>,
     pub should_send_body: bool,
     pub await_100_continue: bool,
     pub status: Option<StatusCode>,
@@ -74,6 +74,14 @@ pub enum CloseReason {
     ServerConnectionClose,
     Not100Continue,
     CloseDelimitedBody,
+}
+
+// This is here only to be able to use tinyvec::ArrayVec.
+#[doc(hidden)]
+impl Default for CloseReason {
+    fn default() -> Self {
+        Self::Http10
+    }
 }
 
 impl CloseReason {
@@ -121,7 +129,7 @@ impl<B, S> Flow<B, S> {
 
 impl<B> Flow<B, Prepare> {
     pub fn new(request: Request<B>) -> Result<Self, Error> {
-        let mut close_reason = SmallVec::new();
+        let mut close_reason = ArrayVec::new();
 
         if request.version() == Version::HTTP_10 {
             // request.analyze() in CallHolder::new() ensures the only versions are HTTP 1.0 and 1.1

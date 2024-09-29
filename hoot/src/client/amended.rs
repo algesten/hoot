@@ -1,7 +1,7 @@
 use std::mem;
 
 use http::{HeaderMap, HeaderName, HeaderValue, Method, Request, Uri, Version};
-use smallvec::SmallVec;
+use tinyvec::ArrayVec;
 use url::Url;
 
 use crate::body::BodyWriter;
@@ -39,8 +39,26 @@ use super::MAX_EXTRA_HEADERS;
 pub(crate) struct AmendedRequest<Body> {
     request: Request<Option<Body>>,
     uri: Option<Uri>,
-    headers: SmallVec<[(HeaderName, HeaderValue); MAX_EXTRA_HEADERS]>,
-    unset: SmallVec<[HeaderName; 3]>,
+    headers: ArrayVec<[(HName, HValue); MAX_EXTRA_HEADERS]>,
+    unset: ArrayVec<[HName; 3]>,
+}
+
+// These are here because tinyvec requires a Default impl.
+#[repr(transparent)]
+struct HName(HeaderName);
+#[repr(transparent)]
+struct HValue(HeaderValue);
+
+impl Default for HName {
+    fn default() -> Self {
+        Self(HeaderName::from_static("x-null"))
+    }
+}
+
+impl Default for HValue {
+    fn default() -> Self {
+        Self(HeaderValue::from_static(""))
+    }
 }
 
 impl<Body> AmendedRequest<Body> {
@@ -50,8 +68,8 @@ impl<Body> AmendedRequest<Body> {
         AmendedRequest {
             request: Request::from_parts(parts, Some(body)),
             uri: None,
-            headers: SmallVec::new(),
-            unset: SmallVec::new(),
+            headers: ArrayVec::new(),
+            unset: ArrayVec::new(),
         }
     }
 
@@ -98,7 +116,7 @@ impl<Body> AmendedRequest<Body> {
         let value = <HeaderValue as TryFrom<V>>::try_from(value)
             .map_err(Into::into)
             .map_err(|e| Error::BadHeader(e.to_string()))?;
-        self.headers.push((name, value));
+        self.headers.push((HName(name), HValue(value)));
         Ok(())
     }
 
@@ -110,7 +128,7 @@ impl<Body> AmendedRequest<Body> {
         let name = <HeaderName as TryFrom<K>>::try_from(name)
             .map_err(Into::into)
             .map_err(|e| Error::BadHeader(e.to_string()))?;
-        self.unset.push(name);
+        self.unset.push(HName(name));
         Ok(())
     }
 
@@ -121,9 +139,9 @@ impl<Body> AmendedRequest<Body> {
     pub fn headers(&self) -> impl Iterator<Item = (&HeaderName, &HeaderValue)> {
         self.headers
             .iter()
-            .map(|v| (&v.0, &v.1))
+            .map(|v| (&v.0 .0, &v.1 .0))
             .chain(self.request.headers().iter())
-            .filter(|v| !self.unset.contains(v.0))
+            .filter(|v| !self.unset.iter().any(|x| x.0 == v.0))
     }
 
     fn headers_get_all(&self, key: &'static str) -> impl Iterator<Item = &HeaderValue> {
