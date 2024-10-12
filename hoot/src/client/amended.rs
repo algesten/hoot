@@ -1,12 +1,11 @@
 use std::mem;
 
 use http::{HeaderMap, HeaderName, HeaderValue, Method, Request, Uri, Version};
-use tinyvec::ArrayVec;
 use url::Url;
 
 use crate::body::BodyWriter;
 use crate::ext::MethodExt;
-use crate::util::compare_lowercase_ascii;
+use crate::util::{compare_lowercase_ascii, ArrayVec};
 use crate::Error;
 
 use super::MAX_EXTRA_HEADERS;
@@ -39,37 +38,22 @@ use super::MAX_EXTRA_HEADERS;
 pub(crate) struct AmendedRequest<Body> {
     request: Request<Option<Body>>,
     uri: Option<Uri>,
-    headers: ArrayVec<[(HName, HValue); MAX_EXTRA_HEADERS]>,
-    unset: ArrayVec<[HName; 3]>,
-}
-
-// These are here because tinyvec requires a Default impl.
-#[repr(transparent)]
-struct HName(HeaderName);
-#[repr(transparent)]
-struct HValue(HeaderValue);
-
-impl Default for HName {
-    fn default() -> Self {
-        Self(HeaderName::from_static("x-null"))
-    }
-}
-
-impl Default for HValue {
-    fn default() -> Self {
-        Self(HeaderValue::from_static(""))
-    }
+    headers: ArrayVec<(HeaderName, HeaderValue), MAX_EXTRA_HEADERS>,
+    unset: ArrayVec<HeaderName, 3>,
 }
 
 impl<Body> AmendedRequest<Body> {
     pub fn new(request: Request<Body>) -> Self {
         let (parts, body) = request.into_parts();
 
+        const UNINIT_NAME: HeaderName = HeaderName::from_static("x-null");
+        const UNINIT_VALUE: HeaderValue = HeaderValue::from_static("");
+
         AmendedRequest {
             request: Request::from_parts(parts, Some(body)),
             uri: None,
-            headers: ArrayVec::new(),
-            unset: ArrayVec::new(),
+            headers: ArrayVec::from_fn(|_| (UNINIT_NAME, UNINIT_VALUE)),
+            unset: ArrayVec::from_fn(|_| UNINIT_NAME),
         }
     }
 
@@ -116,7 +100,7 @@ impl<Body> AmendedRequest<Body> {
         let value = <HeaderValue as TryFrom<V>>::try_from(value)
             .map_err(Into::into)
             .map_err(|e| Error::BadHeader(e.to_string()))?;
-        self.headers.push((HName(name), HValue(value)));
+        self.headers.push((name, value));
         Ok(())
     }
 
@@ -128,7 +112,7 @@ impl<Body> AmendedRequest<Body> {
         let name = <HeaderName as TryFrom<K>>::try_from(name)
             .map_err(Into::into)
             .map_err(|e| Error::BadHeader(e.to_string()))?;
-        self.unset.push(HName(name));
+        self.unset.push(name);
         Ok(())
     }
 
@@ -139,9 +123,9 @@ impl<Body> AmendedRequest<Body> {
     pub fn headers(&self) -> impl Iterator<Item = (&HeaderName, &HeaderValue)> {
         self.headers
             .iter()
-            .map(|v| (&v.0 .0, &v.1 .0))
+            .map(|v| (&v.0, &v.1))
             .chain(self.request.headers().iter())
-            .filter(|v| !self.unset.iter().any(|x| x.0 == v.0))
+            .filter(|v| !self.unset.iter().any(|x| x == v.0))
     }
 
     fn headers_get_all(&self, key: &'static str) -> impl Iterator<Item = &HeaderValue> {

@@ -51,3 +51,6 @@ pub use body::BodyMode;
 pub mod client;
 
 pub mod parser;
+
+#[doc(hidden)]
+pub use util::ArrayVec;

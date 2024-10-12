@@ -30,7 +30,6 @@ dependencies = [
  "http",
  "httparse",
  "log",
- "tinyvec",
  "url",
 ]
 

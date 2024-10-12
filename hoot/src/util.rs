@@ -1,5 +1,6 @@
 use std::fmt;
 use std::io::{self, Cursor};
+use std::ops::{Deref, DerefMut};
 
 pub(crate) fn find_crlf(b: &[u8]) -> Option<usize> {
     let cr = b.iter().position(|c| *c == b'\r')?;
@@ -127,3 +128,48 @@ const HEX: [&str; 256] = [
     "e0", "e1", "e2", "e3", "e4", "e5", "e6", "e7", "e8", "e9", "ea", "eb", "ec", "ed", "ee", "ef",
     "f0", "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "fa", "fb", "fc", "fd", "fe", "ff",
 ];
+
+pub struct ArrayVec<T, const N: usize> {
+    len: usize,
+    arr: [T; N],
+}
+
+impl<T, const N: usize> Deref for ArrayVec<T, N> {
+    type Target = [T];
+
+    fn deref(&self) -> &Self::Target {
+        &self.arr[..self.len]
+    }
+}
+
+impl<T, const N: usize> DerefMut for ArrayVec<T, N> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.arr[..self.len]
+    }
+}
+
+impl<T, const N: usize> ArrayVec<T, N> {
+    pub fn from_fn(cb: impl FnMut(usize) -> T) -> Self {
+        Self {
+            len: 0,
+            arr: std::array::from_fn(cb),
+        }
+    }
+
+    pub fn push(&mut self, value: T) {
+        self.arr[self.len] = value;
+        self.len += 1;
+    }
+}
+
+impl<T, const N: usize> fmt::Debug for ArrayVec<T, N>
+where
+    T: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ArrayVec")
+            .field("len", &self.len)
+            .field("arr", &self.arr)
+            .finish()
+    }
+}
