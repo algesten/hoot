@@ -160,6 +160,11 @@ impl<T, const N: usize> ArrayVec<T, N> {
         self.arr[self.len] = value;
         self.len += 1;
     }
+
+    pub fn truncate(&mut self, len: usize) {
+        assert!(len <= self.len);
+        self.len = len;
+    }
 }
 
 impl<T, const N: usize> fmt::Debug for ArrayVec<T, N>
@@ -169,7 +174,16 @@ where
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ArrayVec")
             .field("len", &self.len)
-            .field("arr", &self.arr)
+            .field("arr", &&self.arr[..self.len])
             .finish()
+    }
+}
+
+impl<'a, T, const N: usize> IntoIterator for &'a ArrayVec<T, N> {
+    type Item = &'a T;
+    type IntoIter = core::slice::Iter<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self[..self.len].iter()
     }
 }
