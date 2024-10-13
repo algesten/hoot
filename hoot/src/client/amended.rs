@@ -176,7 +176,11 @@ impl<Body> AmendedRequest<Body> {
         Ok(uri)
     }
 
-    pub fn analyze(&self, wanted_mode: BodyWriter) -> Result<RequestInfo, Error> {
+    pub fn analyze(
+        &self,
+        wanted_mode: BodyWriter,
+        skip_method_body_check: bool,
+    ) -> Result<RequestInfo, Error> {
         let v = self.request.version();
         let m = self.method();
 
@@ -231,13 +235,15 @@ impl<Body> AmendedRequest<Body> {
             wanted_mode
         };
 
-        let need_body = self.method().need_request_body();
-        let has_body = body_mode.has_body();
+        if !skip_method_body_check {
+            let need_body = self.method().need_request_body();
+            let has_body = body_mode.has_body();
 
-        if !need_body && has_body {
-            return Err(Error::MethodForbidsBody(self.method().clone()));
-        } else if need_body && !has_body {
-            return Err(Error::MethodRequiresBody(self.method().clone()));
+            if !need_body && has_body {
+                return Err(Error::MethodForbidsBody(self.method().clone()));
+            } else if need_body && !has_body {
+                return Err(Error::MethodRequiresBody(self.method().clone()));
+            }
         }
 
         Ok(RequestInfo {

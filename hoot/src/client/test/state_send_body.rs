@@ -1,3 +1,5 @@
+use crate::client::flow::SendRequestResult;
+
 use super::scenario::Scenario;
 use super::TestSliceExt;
 
@@ -116,4 +118,26 @@ fn write_with_chunked() {
     assert_eq!(output[..output_used].as_str(), "0\r\n\r\n");
 
     assert!(flow.can_proceed());
+}
+
+#[test]
+fn send_body_despite_method() {
+    let scenario = Scenario::builder()
+        .delete("https://q.test")
+        .send_body("DELETE should not have a body", true)
+        .build();
+
+    let mut flow = scenario.to_prepare();
+
+    flow.send_body_despite_method();
+
+    let mut flow = flow.proceed();
+
+    // Write the prelude and discard
+    flow.write(&mut vec![0; 1024]).unwrap();
+
+    let result = flow.proceed().unwrap();
+
+    // We should be able to get to this state without errors.
+    assert!(matches!(result, SendRequestResult::SendBody(_)));
 }

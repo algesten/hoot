@@ -103,7 +103,9 @@ impl<State, B> Call<State, B> {
             return Ok(());
         }
 
-        let info = self.request.analyze(self.state.writer)?;
+        let info = self
+            .request
+            .analyze(self.state.writer, self.state.skip_method_body_check)?;
 
         if !info.req_host_header {
             if let Some(host) = self.request.uri().host() {
@@ -164,6 +166,7 @@ struct BodyState {
     phase: Phase,
     writer: BodyWriter,
     reader: Option<BodyReader>,
+    skip_method_body_check: bool,
 }
 
 impl BodyState {
@@ -201,6 +204,19 @@ impl Phase {
 }
 
 impl<B> Call<WithoutBody, B> {
+    pub(crate) fn into_send_body(mut self) -> Call<WithBody, B> {
+        assert!(!self.analyzed);
+
+        self.state.skip_method_body_check = true;
+
+        Call {
+            request: self.request,
+            analyzed: self.analyzed,
+            state: self.state,
+            _ph: PhantomData,
+        }
+    }
+
     /// Write the request to the output buffer
     ///
     /// Returns how much of the output buffer that was used.

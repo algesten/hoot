@@ -1,3 +1,5 @@
+use std::mem;
+
 use http::Request;
 
 use crate::ext::MethodExt;
@@ -16,6 +18,7 @@ pub(crate) enum CallHolder<B> {
     WithBody(Call<WithBody, B>),
     RecvResponse(Call<RecvResponse, B>),
     RecvBody(Call<RecvBody, B>),
+    Empty,
 }
 
 impl<B> CallHolder<B> {
@@ -33,6 +36,7 @@ impl<B> CallHolder<B> {
             CallHolder::WithBody(v) => v.amended(),
             CallHolder::RecvResponse(v) => v.amended(),
             CallHolder::RecvBody(v) => v.amended(),
+            CallHolder::Empty => unreachable!(),
         }
     }
 
@@ -42,6 +46,7 @@ impl<B> CallHolder<B> {
             CallHolder::WithBody(v) => v.amended_mut(),
             CallHolder::RecvResponse(v) => v.amended_mut(),
             CallHolder::RecvBody(v) => v.amended_mut(),
+            CallHolder::Empty => unreachable!(),
         }
     }
 
@@ -93,6 +98,7 @@ impl<B> CallHolder<B> {
             CallHolder::WithBody(v) => v.analyze_request(),
             CallHolder::RecvResponse(v) => v.analyze_request(),
             CallHolder::RecvBody(v) => v.analyze_request(),
+            CallHolder::Empty => unreachable!(),
         }
     }
 
@@ -102,6 +108,22 @@ impl<B> CallHolder<B> {
             CallHolder::WithBody(v) => v.body_mode(),
             CallHolder::RecvResponse(v) => v.body_mode(),
             CallHolder::RecvBody(v) => v.body_mode(),
+            CallHolder::Empty => unreachable!(),
         }
+    }
+
+    pub(crate) fn convert_to_send_body(&mut self) {
+        if !matches!(self, CallHolder::WithoutBody(_)) {
+            return;
+        }
+
+        let without = mem::replace(self, CallHolder::Empty);
+        let call = match without {
+            CallHolder::WithoutBody(call) => call,
+            _ => unreachable!(),
+        };
+
+        let call = call.into_send_body();
+        let _ = mem::replace(self, CallHolder::WithBody(call));
     }
 }

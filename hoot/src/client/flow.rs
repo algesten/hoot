@@ -175,6 +175,11 @@ impl<B> Flow<B, Prepare> {
         self.call_mut().request_mut().set_header(key, value)
     }
 
+    pub fn send_body_despite_method(&mut self) {
+        self.inner.should_send_body = true;
+        self.inner.call.convert_to_send_body();
+    }
+
     pub fn proceed(self) -> Flow<B, SendRequest> {
         Flow::wrap(self.inner)
     }
