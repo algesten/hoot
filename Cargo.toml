@@ -9,7 +9,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/algesten/hoot"
 
 # MSRV
-rust-version = "1.61"
+rust-version = "1.67"
 
 [features]
 
