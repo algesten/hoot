@@ -1,32 +1,14 @@
 # hoot
 
-Sans-IO HTTP/1.1 library.
+A correct Sans-IO HTTP/1.1 implementation
 
-hoot is a library that implements the HTTP/1.1 protocol without considering transport.
-The goal is to make a first class HTTP/1.1 implementation that can be used in other projects
-that add socket handling, cookies, body compression, JSON etc.
+## API in flux
 
-## In scope:
+This library is currently experimental. We're trying to find a good
+API that fulfil these criteria:
 
-* First class HTTP/1.1 protocol implementation
-* Indication of connection states (such as when a connection must be closed)
-* transfer-encoding: chunked
-* Redirect handling (building URI and amending requests)
-
-## Out of scope:
-
-* Opening/closing sockets
-* TLS (https)
-* Cookie jars
-* Authorization
-* Body data transformations (charset, compression etc)
-
-The project is run as a companion project to [ureq](https://crates.io/crates/ureq),
-specifically the [ureq 3.x rewrite](https://github.com/algesten/ureq/pull/762)
-
-## The http crate
-
-hoot is based on the [http crate](https://crates.io/crates/http) - a unified HTTP API for Rust.
-
+* Minimal allocations
+* Ergonomic - As ergonomic as possible while still being allocation free.
+* Correct - Encourage (or force) correct HTTP 1.1 usage.
 
 License: MIT OR Apache-2.0

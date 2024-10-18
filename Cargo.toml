@@ -1,7 +1,20 @@
-[workspace]
-resolver = "2"
+[package]
+name = "hoot"
+version = "0.2.5"
+edition = "2021"
+authors = ["Martin Algesten <martin@algesten.se>"]
+description = "http 1.1 library"
+keywords = ["http", "server", "web"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/algesten/hoot"
 
-members = [
-        #
-        "hoot",
-]
+# MSRV
+rust-version = "1.61"
+
+[features]
+
+[dependencies]
+http = { version = "1.1.0", default-features = false, features = ["std"] }
+httparse = { version = "1.8.0", default-features = false }
+log = "0.4.22"
+url = "2.5.2"
