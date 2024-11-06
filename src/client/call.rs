@@ -61,8 +61,8 @@ impl<B> Call<(), B> {
     /// a [`Call`] instance that does not expect a user provided body.
     ///
     /// ```
-    /// # use hoot::client::call::Call;
-    /// # use hoot::http::Request;
+    /// # use ureq_proto::client::call::Call;
+    /// # use ureq_proto::http::Request;
     /// let req = Request::head("http://foo.test/page").body(()).unwrap();
     /// Call::without_body(req).unwrap();
     /// ```
@@ -76,8 +76,8 @@ impl<B> Call<(), B> {
     /// used even if the body is zero-sized (`content-length: 0`).
     ///
     /// ```
-    /// # use hoot::client::call::Call;
-    /// # use hoot::http::Request;
+    /// # use ureq_proto::client::call::Call;
+    /// # use ureq_proto::http::Request;
     /// let req = Request::put("http://foo.test/path").body(()).unwrap();
     /// Call::with_body(req).unwrap();
     /// ```
@@ -225,8 +225,8 @@ impl<B> Call<WithoutBody, B> {
     /// Returns how much of the output buffer that was used.
     ///
     /// ```
-    /// # use hoot::client::call::Call;
-    /// # use hoot::http::Request;
+    /// # use ureq_proto::client::call::Call;
+    /// # use ureq_proto::http::Request;
     /// let req = Request::head("http://foo.test/page").body(()).unwrap();
     /// let mut call = Call::without_body(req).unwrap();
     ///
@@ -275,8 +275,8 @@ impl<B> Call<WithBody, B> {
     /// were consumed. The second number is how many bytes of the `output` that were used.
     ///
     /// ```
-    /// # use hoot::client::call::Call;
-    /// # use hoot::http::Request;
+    /// # use ureq_proto::client::call::Call;
+    /// # use ureq_proto::http::Request;
     /// let req = Request::post("http://f.test/page")
     ///     .header("transfer-encoding", "chunked")
     ///     .body(())
@@ -463,7 +463,7 @@ impl<B> Call<RecvResponse, B> {
         let (input_used, response) = match try_parse_response::<MAX_RESPONSE_HEADERS>(input)? {
             Some(v) => v,
             None => {
-                // TODO(martin): I don't like this code. hoot's mission is to be correct HTTP/1.1
+                // TODO(martin): I don't like this code. The mission is to be correct HTTP/1.1
                 // and this is a hack to allow for broken servers.
                 //
                 // As a special case, to handle broken servers that does a redirect without

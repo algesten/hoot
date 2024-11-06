@@ -231,9 +231,8 @@ impl<B> Flow<B, SendRequest> {
     /// Writes incrementally, it can be called repeatedly in situations where the output
     /// buffer is small.
     ///
-    /// This includes the prelude/first row i.e. `GET / HTTP/1.1` and all headers.
-    /// The output buffer needs to be large enough for the longest row of the prelude
-    /// and headers.
+    /// This includes the first row, i.e. `GET / HTTP/1.1` and all headers.
+    /// The output buffer needs to be large enough for the longest row.
     ///
     /// Example:
     ///

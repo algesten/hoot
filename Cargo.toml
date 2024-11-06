@@ -1,12 +1,12 @@
 [package]
-name = "hoot"
-version = "0.2.6"
+name = "ureq-proto"
+version = "0.1.0"
 edition = "2021"
 authors = ["Martin Algesten <martin@algesten.se>"]
-description = "http 1.1 library"
+description = "ureq support crate"
 keywords = ["http", "server", "web"]
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/algesten/hoot"
+repository = "https://github.com/algesten/ureq-proto"
 
 # MSRV
 rust-version = "1.67"

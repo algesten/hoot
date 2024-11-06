@@ -1,6 +1,6 @@
-//! HTTP/1.1 client
+//! HTTP/1.1 client protocol
 //!
-//! hoot is Sans-IO, which means "writing" and "reading" are made via buffers
+//! Sans-IO protocol impl, which means "writing" and "reading" are made via buffers
 //! rather than the Write/Read std traits.
 //!
 //! The [`Flow`](flow::Flow) object attempts to encode correct HTTP/1.1 handling using
@@ -12,7 +12,7 @@
 //! * **Prepare** - Preparing a request means 1) adding headers such as
 //!   cookies. 2) acquiring the connection from a pool or opening a new
 //!   socket (potentially wrappping in TLS)
-//! * **SendRequest** - Send the "prelude", which is the method, path
+//! * **SendRequest** - Send the first row, which is the method, path
 //!   and version as well as the request headers
 //! * **SendBody** - Send the request body
 //! * **Await100** - If there is an `Expect: 100-continue` header, the
@@ -58,8 +58,8 @@
 //! # Example
 //!
 //! ```
-//! use hoot::client::flow::*;
-//! use hoot::http::Request;
+//! use ureq_proto::client::flow::*;
+//! use ureq_proto::http::Request;
 //!
 //! let request = Request::put("https://example.test/my-path")
 //!     .header("Expect", "100-continue")
@@ -84,7 +84,7 @@
 //! // must be TLS wrapped if the scheme so indicate.
 //! // let connection = todo!();
 //!
-//! // Hoot is Sans-IO meaning it does not use any
+//! // Sans-IO means it does not use any
 //! // Write trait or similar. Requests and request
 //! // bodies are written to a buffer that in turn
 //! // should be sent via the connection.
@@ -93,8 +93,6 @@
 //! // ********************************** SendRequest
 //!
 //! // Proceed to the next state writing the request.
-//! // Hoot calls this the request method/path + headers
-//! // the "prelude".
 //! let mut flow = flow.proceed();
 //!
 //! let output_used = flow.write(&mut output).unwrap();
@@ -178,8 +176,7 @@
 //! let full = b"HTTP/1.1 200 OK\r\nContent-Length: 9\r\n\r\n";
 //!
 //! // try_response can be used repeatedly until we
-//! // get enough content that is both a prelude and
-//! // all headers.
+//! // get enough content including all headers.
 //! let (input_used, maybe_response) =
 //!     flow.try_response(part).unwrap();
 //!
@@ -223,6 +220,26 @@
 //! }
 //!
 //! ```
+//!
+//! # In scope:
+//!
+//! * First class HTTP/1.1 protocol implementation
+//! * Indication of connection states (such as when a connection must be closed)
+//! * transfer-encoding: chunked
+//! * Redirect handling (building URI and amending requests)
+//!
+//! # Out of scope:
+//!
+//! * Opening/closing sockets
+//! * TLS (https)
+//! * Cookie jars
+//! * Authorization
+//! * Body data transformations (charset, compression etc)
+//!
+//! # The http crate
+//!
+//! Based on the [http crate](https://crates.io/crates/http) - a unified HTTP API for Rust.
+//!
 
 pub mod call;
 

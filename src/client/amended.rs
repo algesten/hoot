@@ -12,24 +12,24 @@ use super::MAX_EXTRA_HEADERS;
 
 /// `Request` with amends.
 ///
-/// The user provides the `Request<()>`, which hoot considers an immutable object.
+/// The user provides the `Request<()>`, which we consider an immutable object.
 /// When executing a request there are a couple of changes/overrides required to
 /// that immutable object. The `AmendedRequest` encapsulates the original request
 /// and the amends.
 ///
 /// The expected amends are:
 ///
-/// 1.  Cookie headers. Cookie jar functionality is out of scope for hoot, but the
+/// 1.  Cookie headers. Cookie jar functionality is out of scope, but the
 ///     `headers from such a jar should be possible to add.
 /// 2.  `Host` header. Taken from the Request URI unless already set.
-/// 3.  `Content-Type` header. The actual request body handling is out of scope for hoot,
+/// 3.  `Content-Type` header. The actual request body handling is out of scope,
 ///     but an implementation must be able to autodetect the content type for a given body
 ///     and provide that on the request.
 /// 4.  `Content-Length` header. When sending non chunked transfer bodies (and not HTTP/1.0
 ///     which closes the connection).
 /// 5.  `Transfer-Encoding: chunked` header when the content length for a body is unknown.
 /// 6.  `Content-Encoding` header to indicate on-the-wire compression. The compression itself
-///      is out of scope for hoot, but the user must be able to set it.
+///      is out of scope, but the user must be able to set it.
 /// 7.  `User-Agent` header.
 /// 8.  `Accept` header.
 /// 9.  Changing the `Method` when following redirects.

@@ -2,7 +2,7 @@ use std::fmt;
 
 use http::{Method, Version};
 
-/// Error type for hoot
+/// Error type for ureq-proto
 #[derive(Debug, PartialEq, Eq)]
 #[allow(missing_docs)]
 pub enum Error {
