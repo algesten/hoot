@@ -1,3 +1,5 @@
+//! A sequence of calls, such as following redirects.
+
 use std::fmt;
 use std::marker::PhantomData;
 
@@ -13,6 +15,7 @@ use crate::{BodyMode, Error};
 
 use super::holder::CallHolder;
 
+#[doc(hidden)]
 pub mod state {
     pub(crate) trait Named {
         fn name() -> &'static str;
@@ -20,6 +23,7 @@ pub mod state {
 
     macro_rules! flow_state {
         ($n:tt) => {
+            #[doc(hidden)]
             pub struct $n(());
             impl Named for $n {
                 fn name() -> &'static str {
@@ -40,6 +44,7 @@ pub mod state {
 }
 use self::state::*;
 
+/// A flow of calls, in some state following the flow [state graph][crate::client]
 pub struct Flow<B, State> {
     inner: Inner<B>,
     _ph: PhantomData<State>,
@@ -67,12 +72,33 @@ impl<B> Inner<B> {
     }
 }
 
+/// Reasons for an ended flow that requires the connection to be closed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CloseReason {
+    /// HTTP/1.0 requires each request-response to end with a close.
     Http10,
+
+    /// Client sent `connection: close`.
     ClientConnectionClose,
+
+    /// Server sent `connection: close`.
     ServerConnectionClose,
+
+    /// When doing expect-100 the server sent _some other response_.
+    ///
+    /// For expect-100, the only two options for a server response are:
+    ///
+    /// * 100 continue, in which case we continue to send the body.
+    /// * do nothing, in which case we continue to send the body after a timeout.
+    ///
+    /// Sending _something else_, like 401, is incorrect and we must close
+    /// the connection.
     Not100Continue,
+
+    /// Response body is close delimited.
+    ///
+    /// We do not know how much body data to receive. The socket will be closed
+    /// when it's done. This is HTTP/1.0 semantics.
     CloseDelimitedBody,
 }
 
@@ -120,6 +146,7 @@ impl<B, S> Flow<B, S> {
 // //////////////////////////////////////////////////////////////////////////////////////////// PREPARE
 
 impl<B> Flow<B, Prepare> {
+    /// Create a new Flow.
     pub fn new(request: Request<B>) -> Result<Self, Error> {
         let mut close_reason = ArrayVec::from_fn(|_| CloseReason::Http10);
 
@@ -149,22 +176,27 @@ impl<B> Flow<B, Prepare> {
         Ok(Flow::wrap(inner))
     }
 
+    /// Inspect call method
     pub fn method(&self) -> &Method {
         self.call().request().method()
     }
 
+    /// Inspect call URI
     pub fn uri(&self) -> &Uri {
         self.call().request().uri()
     }
 
+    /// Inspect call HTTP version
     pub fn version(&self) -> Version {
         self.call().request().version()
     }
 
+    /// Inspect call headers
     pub fn headers(&self) -> &HeaderMap {
         self.call().request().original_request_headers()
     }
 
+    /// Add more headers to the call
     pub fn header<K, V>(&mut self, key: K, value: V) -> Result<(), Error>
     where
         HeaderName: TryFrom<K>,
@@ -175,11 +207,17 @@ impl<B> Flow<B, Prepare> {
         self.call_mut().request_mut().set_header(key, value)
     }
 
+    /// Convert the call to send body despite method.
+    ///
+    /// Methods like GET, HEAD and DELETE should not have a request body.
+    /// Some broken APIs use bodies anyway, and this is an escape hatch to
+    /// interoperate with such services.
     pub fn send_body_despite_method(&mut self) {
         self.inner.should_send_body = true;
         self.inner.call.convert_to_send_body();
     }
 
+    /// Continue to the next flow state.
     pub fn proceed(self) -> Flow<B, SendRequest> {
         Flow::wrap(self.inner)
     }
@@ -188,6 +226,31 @@ impl<B> Flow<B, Prepare> {
 // //////////////////////////////////////////////////////////////////////////////////////////// SEND REQUEST
 
 impl<B> Flow<B, SendRequest> {
+    /// Write the request to the buffer.
+    ///
+    /// Writes incrementally, it can be called repeatedly in situations where the output
+    /// buffer is small.
+    ///
+    /// This includes the prelude/first row i.e. `GET / HTTP/1.1` and all headers.
+    /// The output buffer needs to be large enough for the longest row of the prelude
+    /// and headers.
+    ///
+    /// Example:
+    ///
+    /// ```text
+    /// POST /bar HTTP/1.1\r\n
+    /// Host: my.server.test\r\n
+    /// User-Agent: myspecialthing\r\n
+    /// \r\n
+    /// <body data>
+    /// ```
+    ///
+    /// The buffer would need to be at least 28 bytes big, since the `User-Agent` row is
+    /// 28 bytes long.
+    ///
+    /// If the output is too small for the longest line, the result is an `OutputOverflow` error.
+    ///
+    /// The `Ok(usize)` is the number of bytes of the `output` buffer that was used.
     pub fn write(&mut self, output: &mut [u8]) -> Result<usize, Error> {
         match &mut self.inner.call {
             CallHolder::WithoutBody(v) => v.write(output),
@@ -196,18 +259,24 @@ impl<B> Flow<B, SendRequest> {
         }
     }
 
+    /// The configured method.
     pub fn method(&self) -> &Method {
         self.call().request().method()
     }
 
+    /// The uri being requested.
     pub fn uri(&self) -> &Uri {
         self.call().request().uri()
     }
 
+    /// Version of the request.
+    ///
+    /// This can only be 1.0 or 1.1.
     pub fn version(&self) -> Version {
         self.call().request().version()
     }
 
+    /// The configured headers.
     pub fn headers_map(&mut self) -> Result<HeaderMap, Error> {
         self.call_mut().analyze_request()?;
         let mut map = HeaderMap::new();
@@ -217,6 +286,10 @@ impl<B> Flow<B, SendRequest> {
         Ok(map)
     }
 
+    /// Check whether the entire request has been sent.
+    ///
+    /// This is useful when the output buffer is small and we need to repeatedly
+    /// call `write()` to send the entire request.
     pub fn can_proceed(&self) -> bool {
         match &self.inner.call {
             CallHolder::WithoutBody(v) => v.is_finished(),
@@ -225,6 +298,10 @@ impl<B> Flow<B, SendRequest> {
         }
     }
 
+    /// Attempt to proceed from this state to the next.
+    ///
+    /// Returns `None` if the entire request has not been sent. It is guaranteed that if
+    /// `can_proceed()` returns `true`, this will return `Some`.
     pub fn proceed(mut self) -> Option<SendRequestResult<B>> {
         if !self.can_proceed() {
             return None;
@@ -254,15 +331,39 @@ impl<B> Flow<B, SendRequest> {
     }
 }
 
+/// Resulting states from sending a request.
+///
+/// After sending the request, there are three possible next states. See [state graph][crate::client].
 pub enum SendRequestResult<B> {
+    /// Expect-100/Continue mechanic.
     Await100(Flow<B, Await100>),
+
+    /// Send the request body.
     SendBody(Flow<B, SendBody>),
+
+    /// Receive the response.
     RecvResponse(Flow<B, RecvResponse>),
 }
 
 // //////////////////////////////////////////////////////////////////////////////////////////// AWAIT 100
 
 impl<B> Flow<B, Await100> {
+    /// Attempt to read a 100-continue response.
+    ///
+    /// Tries to interpret bytes sent by the server as a 100-continue response. The expect-100 mechanic
+    /// means we hope the server will give us an indication on whether to upload a potentially big
+    /// request body, before we start doing it.
+    ///
+    /// * If the server supports expect-100, it will respond `HTTP/1.1 100 Continue\r\n\r\n`, or
+    ///   some other response code (such as 403) if we are not allowed to post the body.
+    /// * If the server does not support expect-100, it will not respond at all, in which case
+    ///   we will proceed to sending the request body after some timeout.
+    ///
+    /// The results are:
+    ///
+    /// * `Ok(0)` - not enough data yet, continue waiting (or `proceed()` if you think we waited enough)
+    /// * `Ok(n)` - `n` number of input bytes were consumed. Call `proceed()` next
+    /// * `Err(e)` - some error that is not recoverable
     pub fn try_read_100(&mut self, input: &[u8]) -> Result<usize, Error> {
         // Try parsing a status line without any headers. The line we are looking for is:
         //
@@ -312,10 +413,17 @@ impl<B> Flow<B, Await100> {
         }
     }
 
+    /// Tell if there is any point in waiting for more data from the server.
+    ///
+    /// Becomes `false` as soon as `try_read_100()` got enough data to determine what to do next.
+    /// This might become `false` even if `try_read_100` returns `Ok(0)`.
+    ///
+    /// If this returns `false`, the user should continue with `proceed()`.
     pub fn can_keep_await_100(&self) -> bool {
         self.inner.await_100_continue
     }
 
+    /// Proceed to the next state.
     pub fn proceed(self) -> Await100Result<B> {
         // We can always proceed out of Await100
 
@@ -327,18 +435,47 @@ impl<B> Flow<B, Await100> {
     }
 }
 
+/// Possible state transitions from awaiting 100.
+///
+/// See [state graph][crate::client]
 pub enum Await100Result<B> {
+    /// Send the request body.
     SendBody(Flow<B, SendBody>),
+
+    /// Receive server response.
     RecvResponse(Flow<B, RecvResponse>),
 }
 
 // //////////////////////////////////////////////////////////////////////////////////////////// SEND BODY
 
 impl<B> Flow<B, SendBody> {
+    /// Write request body from `input` to `output`.
+    ///
+    /// This is called repeatedly until the entire body has been sent. The output buffer is filled
+    /// as much as possible for each call.
+    ///
+    /// Depending on request headers, the output might be `transfer-encoding: chunked`. Chunking means
+    /// the output is slightly larger than the input due to the extra length headers per chunk.
+    /// When not doing chunked, the input/output will be the same per call.
+    ///
+    /// The result `(usize, usize)` is `(input consumed, output used)`.
+    ///
+    /// **Important**
+    ///
+    /// To indicate that the body is fully sent, you call write with an `input` parameter set to `&[]`.
+    /// This ends the `transfer-encoding: chunked` and ensures the state is correct to proceed.
     pub fn write(&mut self, input: &[u8], output: &mut [u8]) -> Result<(usize, usize), Error> {
         self.inner.call.as_with_body_mut().write(input, output)
     }
 
+    /// Helper to avoid copying memory.
+    ///
+    /// When the transfer is _NOT_ chunked, `write()` just copies the `input` to the `output`.
+    /// This memcopy might be possible to avoid if the user can use the `input` buffer directly
+    /// against the transport.
+    ///
+    /// This function is used to "report" how much of the input that has been used. It's effectively
+    /// the same as the first `usize` in the pair returned by `write()`.
     pub fn consume_direct_write(&mut self, amount: usize) -> Result<(), Error> {
         self.inner
             .call
@@ -346,6 +483,12 @@ impl<B> Flow<B, SendBody> {
             .consume_direct_write(amount)
     }
 
+    /// Calculate the overhead for a certain output length.
+    ///
+    /// For `transfer-encoding: chunked`, this can be used to calculate the amount of extra
+    /// bytes that are required to `write()` a certain output.
+    ///
+    /// For non-chunked it returns 0.
     pub fn calculate_output_overhead(&mut self, output_len: usize) -> Result<usize, Error> {
         let call = self.inner.call.as_with_body_mut();
         call.analyze_request()?;
@@ -363,10 +506,19 @@ impl<B> Flow<B, SendBody> {
         })
     }
 
+    /// Check whether the request body is fully sent.
+    ///
+    /// For requests with a `content-length` header set, this will only become `true` once the
+    /// number of bytes communicated have been sent. For chunked transfer, this becomes `true`
+    /// after calling `write()` with an input of `&[]`.
     pub fn can_proceed(&self) -> bool {
         self.inner.call.as_with_body().is_finished()
     }
 
+    /// Proceed to the next state.
+    ///
+    /// Returns `None` if it's not possible to proceed. It's guaranteed that if `can_proceed()` returns
+    /// `true`, this will result in `Some`.
     pub fn proceed(mut self) -> Option<Flow<B, RecvResponse>> {
         if !self.can_proceed() {
             return None;
@@ -391,6 +543,16 @@ impl<B> Flow<B, SendBody> {
 // //////////////////////////////////////////////////////////////////////////////////////////// RECV RESPONSE
 
 impl<B> Flow<B, RecvResponse> {
+    /// Try reading a response from the input.
+    ///
+    /// This requires the entire response, including all headers to be present in the input buffer.
+    ///
+    /// The `(usize, Option<Response()>)` is `(input amount consumed, response`).
+    ///
+    /// Notice that it's possible that we get an `input amount consumed` despite not returning
+    /// a `Some(Response)`. This can happen if the server returned a 100-continue, and due to
+    /// timing reasons we did not receive it while we were in the `Await100` flow state. This
+    /// "spurios" 100 will be discarded before we parse the actual response.
     pub fn try_response(&mut self, input: &[u8]) -> Result<(usize, Option<Response<()>>), Error> {
         let maybe_response = self.inner.call.as_recv_response_mut().try_response(input)?;
 
@@ -428,10 +590,15 @@ impl<B> Flow<B, RecvResponse> {
         Ok((input_used, Some(response)))
     }
 
+    /// Tell if we have finished receiving the response.
     pub fn can_proceed(&self) -> bool {
         self.inner.call.as_recv_response().is_finished()
     }
 
+    /// Proceed to the next state.
+    ///
+    /// This returns `None` if we have not finished receiving the response. It is guaranteed that if
+    /// `can_proceed()` returns true, this will return `Some`.
     pub fn proceed(mut self) -> Option<RecvResponseResult<B>> {
         if !self.can_proceed() {
             return None;
@@ -467,28 +634,48 @@ impl<B> Flow<B, RecvResponse> {
     }
 }
 
+/// The possible states after receiving a response.
+///
+/// See [state graph][crate::client]
 pub enum RecvResponseResult<B> {
+    /// Receive a response body.
     RecvBody(Flow<B, RecvBody>),
+
+    /// Follow a redirect.
     Redirect(Flow<B, Redirect>),
+
+    /// Run cleanup.
     Cleanup(Flow<B, Cleanup>),
 }
 
 // //////////////////////////////////////////////////////////////////////////////////////////// RECV BODY
 
 impl<B> Flow<B, RecvBody> {
+    /// Read the response body from `input` to `output`.
+    ///
+    /// Depending on response headers, we can be in `transfer-encoding: chunked` or not. If we are,
+    /// there will be less `output` bytes than `input`.
+    ///
+    /// The result `(usize, usize)` is `(input consumed, output buffer used)`.
     pub fn read(&mut self, input: &[u8], output: &mut [u8]) -> Result<(usize, usize), Error> {
         self.inner.call.as_recv_body_mut().read(input, output)
     }
 
+    /// Tell which kind of mode the response body is.
+    pub fn body_mode(&self) -> BodyMode {
+        self.call().body_mode()
+    }
+
+    /// Check if the response body has been fully received.
     pub fn can_proceed(&self) -> bool {
         let call = self.inner.call.as_recv_body();
         call.is_ended() || call.is_close_delimited()
     }
 
-    pub fn body_mode(&self) -> BodyMode {
-        self.call().body_mode()
-    }
-
+    /// Proceed to the next state.
+    ///
+    /// Returns `None` if we are not fully received the body. It is guaranteed that if `can_proceed()`
+    /// returns `true`, this will return `Some`.
     pub fn proceed(self) -> Option<RecvBodyResult<B>> {
         if !self.can_proceed() {
             return None;
@@ -502,14 +689,31 @@ impl<B> Flow<B, RecvBody> {
     }
 }
 
+/// Possible states after receiving a body.
+///
+/// See [state graph][crate::client]
 pub enum RecvBodyResult<B> {
+    /// Follow a redirect
     Redirect(Flow<B, Redirect>),
+
+    /// Go to cleanup
     Cleanup(Flow<B, Cleanup>),
 }
 
 // //////////////////////////////////////////////////////////////////////////////////////////// REDIRECT
 
 impl<B> Flow<B, Redirect> {
+    /// Construct a new `Flow` by following the redirect.
+    ///
+    /// There are some rules when follwing a redirect.
+    ///
+    /// * For 307/308
+    ///     * POST/PUT results in `None`, since we do not allow redirecting a request body
+    ///     * DELETE is intentionally excluded: <https://stackoverflow.com/questions/299628>
+    ///     * All other methods retain the method in the redirect
+    /// * Other redirect (301, 302, etc)
+    ///     * HEAD results in HEAD in the redirect
+    ///     * All other methods becomes GET
     pub fn as_new_flow(
         &mut self,
         redirect_auth_headers: RedirectAuthHeaders,
@@ -586,18 +790,24 @@ impl<B> Flow<B, Redirect> {
         Ok(Some(next))
     }
 
+    /// The redirect status code.
     pub fn status(&self) -> StatusCode {
         self.inner.status.unwrap()
     }
 
+    /// Whether we must close the connection corresponding to the current flow.
+    ///
+    /// This is used to inform connection pooling.
     pub fn must_close_connection(&self) -> bool {
         self.close_reason().is_some()
     }
 
+    /// If we are closing the connection, give a reason why.
     pub fn close_reason(&self) -> Option<&'static str> {
         self.inner.close_reason.first().map(|s| s.explain())
     }
 
+    /// Proceed to the cleanup state.
     pub fn proceed(self) -> Flow<B, Cleanup> {
         Flow::wrap(self.inner)
     }
@@ -631,10 +841,12 @@ pub enum RedirectAuthHeaders {
 // //////////////////////////////////////////////////////////////////////////////////////////// CLEANUP
 
 impl<B> Flow<B, Cleanup> {
+    /// Tell if we must close the connection.
     pub fn must_close_connection(&self) -> bool {
         self.close_reason().is_some()
     }
 
+    /// If we are closing the connection, give a reason.
     pub fn close_reason(&self) -> Option<&'static str> {
         self.inner.close_reason.first().map(|s| s.explain())
     }

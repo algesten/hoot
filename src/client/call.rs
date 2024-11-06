@@ -1,3 +1,5 @@
+//! A single request-response. No redirection or other logic.
+
 use std::fmt;
 use std::io::Write;
 use std::marker::PhantomData;
@@ -12,6 +14,7 @@ use crate::{BodyMode, Error};
 use super::amended::AmendedRequest;
 use super::MAX_RESPONSE_HEADERS;
 
+#[doc(hidden)]
 pub mod state {
     /// Type state for requests without bodies via [`Call::without_body()`]
     #[doc(hidden)]
@@ -244,6 +247,7 @@ impl<B> Call<WithoutBody, B> {
         Ok(output_used)
     }
 
+    /// Whether the request has been fully written.
     pub fn is_finished(&self) -> bool {
         !self.state.phase.is_prelude()
     }
@@ -349,6 +353,7 @@ impl<B> Call<WithBody, B> {
         self.state.writer.is_chunked()
     }
 
+    /// Tell if the request and body has been sent.
     pub fn is_finished(&self) -> bool {
         self.state.writer.is_ended()
     }
@@ -515,6 +520,7 @@ impl<B> Call<RecvResponse, B> {
         Ok(Some((input_used, response)))
     }
 
+    /// Tell if the response has been received.
     pub fn is_finished(&self) -> bool {
         self.state.reader.is_some()
     }

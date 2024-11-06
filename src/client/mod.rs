@@ -19,7 +19,7 @@
 //!   client should pause before sending the body
 //! * **RecvResponse** - Receive the response, meaning the status and
 //!   version and the response headers
-//! * *RecvBody** - Receive the response body
+//! * **RecvBody** - Receive the response body
 //! * **Redirect** - Handle redirects, potentially spawning new requests
 //! * **Cleanup** - Return the connection to the pool or close it
 //!

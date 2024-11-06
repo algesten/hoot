@@ -30,7 +30,7 @@
 #![forbid(unsafe_code)]
 #![warn(clippy::all)]
 #![allow(clippy::uninlined_format_args)]
-// #![deny(missing_docs)]
+#![deny(missing_docs)]
 
 #[macro_use]
 extern crate log;
@@ -50,6 +50,9 @@ pub use body::BodyMode;
 
 pub mod client;
 
+/// Low level HTTP parser
+///
+/// This is to bridge `httparse` crate to `http` crate.
 pub mod parser;
 
 #[doc(hidden)]

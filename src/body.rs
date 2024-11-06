@@ -193,6 +193,7 @@ pub(crate) enum BodyReader {
     CloseDelimited,
 }
 
+/// Kind of body
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BodyMode {
     /// No body is expected either due to the status or method.

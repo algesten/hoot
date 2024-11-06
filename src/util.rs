@@ -129,6 +129,7 @@ const HEX: [&str; 256] = [
     "f0", "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "fa", "fb", "fc", "fd", "fe", "ff",
 ];
 
+/// Simple impl of an array behaving like a vec.
 pub struct ArrayVec<T, const N: usize> {
     len: usize,
     arr: [T; N],
@@ -149,6 +150,9 @@ impl<T, const N: usize> DerefMut for ArrayVec<T, N> {
 }
 
 impl<T, const N: usize> ArrayVec<T, N> {
+    /// Construct the array.
+    ///
+    /// The function must produces placeholder elements of the type `T`.
     pub fn from_fn(cb: impl FnMut(usize) -> T) -> Self {
         Self {
             len: 0,
@@ -156,11 +160,15 @@ impl<T, const N: usize> ArrayVec<T, N> {
         }
     }
 
+    /// Add a value T.
     pub fn push(&mut self, value: T) {
         self.arr[self.len] = value;
         self.len += 1;
     }
 
+    /// Shorten the vec.
+    ///
+    /// This does not drop the elements that are now unused.
     pub fn truncate(&mut self, len: usize) {
         assert!(len <= self.len);
         self.len = len;
