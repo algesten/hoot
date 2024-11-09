@@ -48,6 +48,10 @@ impl Dechunker {
         Ok((pos.index_in, pos.index_out))
     }
 
+    pub fn is_on_chunk_boundary(&self) -> bool {
+        *self == Self::Size
+    }
+
     #[cfg(test)]
     fn left(&self) -> usize {
         if let Self::Chunk(l) = self {
@@ -133,7 +137,7 @@ impl Dechunker {
         pos.index_in += 2;
         *self = Self::Size;
 
-        Ok(true)
+        Ok(false)
     }
 
     fn trailer_or_ended(&mut self, src: &[u8], pos: &mut Pos) -> Result<bool, Error> {
@@ -221,6 +225,20 @@ mod test {
         assert!(!d.is_ended());
         assert_eq!(d.parse_input(b"\r\n", &mut b)?, (2, 0));
         assert!(d.is_ended());
+        Ok(())
+    }
+
+    #[test]
+    fn test_dechunk_one_chunk_at_a_time() -> Result<(), Error> {
+        let mut d = Dechunker::new();
+        let mut b = [0; 1024];
+        const DATA: &[u8] = b"4\r\ndata\r\n4\r\nmoar\r\n";
+        assert_eq!(d.parse_input(DATA, &mut b)?, (9, 4));
+
+        // Stop reading on every chunk boundary.
+        assert!(d.is_on_chunk_boundary());
+
+        assert_eq!(String::from_utf8_lossy(&b[..4]), "data");
         Ok(())
     }
 }

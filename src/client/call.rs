@@ -170,6 +170,7 @@ struct BodyState {
     writer: BodyWriter,
     reader: Option<BodyReader>,
     skip_method_body_check: bool,
+    stop_on_chunk_boundary: bool,
 }
 
 impl BodyState {
@@ -575,7 +576,24 @@ impl<B> Call<RecvBody, B> {
             return Ok((0, 0));
         }
 
-        rbm.read(input, output)
+        rbm.read(input, output, self.state.stop_on_chunk_boundary)
+    }
+
+    /// Set whether we are stopping on chunk boundaries.
+    ///
+    /// If `false`, we are trying to fill the entire `output` in each `read()` call.
+    ///
+    /// Defaults to `false`.
+    pub fn stop_on_chunk_boundary(&mut self, enabled: bool) {
+        self.state.stop_on_chunk_boundary = enabled;
+    }
+
+    /// Tell if we are currently on a chunk boundary.
+    ///
+    /// Only relevant if we are first enabling `stop_on_chunk_boundary()`.
+    pub fn is_on_chunk_boundary(&self) -> bool {
+        let rbm = self.state.reader.as_ref().unwrap();
+        rbm.is_on_chunk_boundary()
     }
 
     /// Tell if the response is over
