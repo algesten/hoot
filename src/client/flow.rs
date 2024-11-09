@@ -660,6 +660,28 @@ impl<B> Flow<B, RecvBody> {
         self.inner.call.as_recv_body_mut().read(input, output)
     }
 
+    /// Set if we are stopping on chunk boundaries.
+    ///
+    /// If `false`, we try to fill entire `output` on each read() call.
+    /// Has no meaning unless the response in chunked.
+    ///
+    /// Defaults to `false`
+    pub fn stop_on_chunk_boundary(&mut self, enabled: bool) {
+        self.inner
+            .call
+            .as_recv_body_mut()
+            .stop_on_chunk_boundary(enabled);
+    }
+
+    /// Tell if the reading is on a chunk boundary.
+    ///
+    /// Used when we want to read exactly chunk-by-chunk.
+    ///
+    /// Only releveant if we first enabled `stop_on_chunk_boundary()`.
+    pub fn is_on_chunk_boundary(&self) -> bool {
+        self.inner.call.as_recv_body().is_on_chunk_boundary()
+    }
+
     /// Tell which kind of mode the response body is.
     pub fn body_mode(&self) -> BodyMode {
         self.call().body_mode()

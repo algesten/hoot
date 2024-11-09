@@ -85,10 +85,48 @@ fn recv_body_chunked_full() {
 
     let mut output = vec![0; 1024];
 
+    // this is the default
+    // flow.stop_on_chunk_boundary(false);
+
     let (input_used, output_used) = flow.read(b"5\r\nhello\r\n0\r\n\r\n", &mut output).unwrap();
     assert_eq!(input_used, 15);
     assert_eq!(output_used, 5);
     assert_eq!(output[..output_used].as_str(), "hello");
+    assert!(flow.can_proceed());
+}
+
+#[test]
+fn recv_body_chunked_stop_boundary() {
+    let scenario = Scenario::builder()
+        .get("https://q.test")
+        .response(
+            Response::builder()
+                .header("transfer-encoding", "chunked")
+                .body(())
+                .unwrap(),
+        )
+        .build();
+
+    let mut flow = scenario.to_recv_body();
+
+    let mut output = vec![0; 1024];
+
+    flow.stop_on_chunk_boundary(true);
+
+    // chunk reading starts on boundary.
+    assert!(flow.is_on_chunk_boundary());
+
+    let (input_used, output_used) = flow.read(b"5\r\nhello\r\n0\r\n\r\n", &mut output).unwrap();
+    assert_eq!(input_used, 10);
+    assert_eq!(output_used, 5);
+    assert_eq!(output[..output_used].as_str(), "hello");
+
+    // chunk reading stops on chunk boundary.
+    assert!(flow.is_on_chunk_boundary());
+
+    let (input_used, output_used) = flow.read(b"0\r\n\r\n", &mut output).unwrap();
+    assert_eq!(input_used, 5);
+    assert_eq!(output_used, 0);
     assert!(flow.can_proceed());
 }
 

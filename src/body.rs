@@ -322,11 +322,16 @@ impl BodyReader {
         Ok(Self::CloseDelimited)
     }
 
-    pub fn read(&mut self, src: &[u8], dst: &mut [u8]) -> Result<(usize, usize), Error> {
+    pub fn read(
+        &mut self,
+        src: &[u8],
+        dst: &mut [u8],
+        stop_on_chunk_boundary: bool,
+    ) -> Result<(usize, usize), Error> {
         // unwrap is ok because we can't be in state RECV_BODY without setting it.
         let part = match self {
             BodyReader::LengthDelimited(_) => self.read_limit(src, dst),
-            BodyReader::Chunked(_) => self.read_chunked(src, dst),
+            BodyReader::Chunked(_) => self.read_chunked(src, dst, stop_on_chunk_boundary),
             BodyReader::CloseDelimited => self.read_unlimit(src, dst),
             BodyReader::NoBody => return Ok((0, 0)),
         }?;
@@ -352,13 +357,38 @@ impl BodyReader {
         Ok((to_read, to_read))
     }
 
-    fn read_chunked(&mut self, src: &[u8], dst: &mut [u8]) -> Result<(usize, usize), Error> {
+    fn read_chunked(
+        &mut self,
+        src: &[u8],
+        dst: &mut [u8],
+        stop_on_chunk_boundary: bool,
+    ) -> Result<(usize, usize), Error> {
         let dechunker = match self {
             BodyReader::Chunked(v) => v,
             _ => unreachable!(),
         };
 
-        let (input_used, output_used) = dechunker.parse_input(src, dst)?;
+        let mut input_used = 0;
+        let mut output_used = 0;
+
+        loop {
+            let (i, o) = dechunker.parse_input(&src[input_used..], &mut dst[output_used..])?;
+
+            input_used += i;
+            output_used += o;
+
+            if i == 0 || input_used == src.len() || output_used == dst.len() {
+                break;
+            }
+
+            if dechunker.is_ended() {
+                break;
+            }
+
+            if stop_on_chunk_boundary && dechunker.is_on_chunk_boundary() {
+                break;
+            }
+        }
 
         Ok((input_used, output_used))
     }
@@ -376,6 +406,15 @@ impl BodyReader {
             BodyReader::NoBody => true,
             BodyReader::LengthDelimited(v) => *v == 0,
             BodyReader::Chunked(v) => v.is_ended(),
+            BodyReader::CloseDelimited => false,
+        }
+    }
+
+    pub(crate) fn is_on_chunk_boundary(&self) -> bool {
+        match self {
+            BodyReader::NoBody => false,
+            BodyReader::LengthDelimited(_) => false,
+            BodyReader::Chunked(v) => v.is_on_chunk_boundary(),
             BodyReader::CloseDelimited => false,
         }
     }
