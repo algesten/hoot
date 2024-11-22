@@ -114,7 +114,7 @@
 //! // In this example, we know the next state is Await100.
 //! // A real client needs to match on the variants.
 //! let mut flow = match flow.proceed() {
-//!     Some(SendRequestResult::Await100(v)) => v,
+//!     Ok(Some(SendRequestResult::Await100(v))) => v,
 //!     _ => panic!(),
 //! };
 //!
@@ -138,7 +138,7 @@
 //! // can_keep_await_100() is true or false.
 //! // A real client needs to match on the variants.
 //! let mut flow = match flow.proceed() {
-//!     Await100Result::SendBody(v) => v,
+//!     Ok(Await100Result::SendBody(v)) => v,
 //!     _ => panic!(),
 //! };
 //!

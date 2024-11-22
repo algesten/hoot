@@ -49,7 +49,7 @@ impl Scenario {
         flow.write(&mut vec![0; 1024]).unwrap();
 
         match flow.proceed() {
-            Some(SendRequestResult::SendBody(v)) => v,
+            Ok(Some(SendRequestResult::SendBody(v))) => v,
             _ => unreachable!("Incorrect scenario not leading to_send_body()"),
         }
     }
@@ -61,7 +61,7 @@ impl Scenario {
         flow.write(&mut vec![0; 1024]).unwrap();
 
         match flow.proceed() {
-            Some(SendRequestResult::Await100(v)) => v,
+            Ok(Some(SendRequestResult::Await100(v))) => v,
             _ => unreachable!("Incorrect scenario not leading to_await_100()"),
         }
     }
@@ -76,18 +76,18 @@ impl Scenario {
             let mut flow = if flow.inner().await_100_continue {
                 // Go via Await100
                 let flow = match flow.proceed() {
-                    Some(SendRequestResult::Await100(v)) => v,
+                    Ok(Some(SendRequestResult::Await100(v))) => v,
                     _ => unreachable!(),
                 };
 
                 // Proceed straight out of Await100
                 match flow.proceed() {
-                    Await100Result::SendBody(v) => v,
+                    Ok(Await100Result::SendBody(v)) => v,
                     _ => unreachable!(),
                 }
             } else {
                 match flow.proceed() {
-                    Some(SendRequestResult::SendBody(v)) => v,
+                    Ok(Some(SendRequestResult::SendBody(v))) => v,
                     _ => unreachable!(),
                 }
             };
@@ -105,7 +105,7 @@ impl Scenario {
             flow.proceed().unwrap()
         } else {
             match flow.proceed() {
-                Some(SendRequestResult::RecvResponse(v)) => v,
+                Ok(Some(SendRequestResult::RecvResponse(v))) => v,
                 _ => unreachable!(),
             }
         }

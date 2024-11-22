@@ -18,7 +18,7 @@ fn proceed_without_100_continue() {
     assert!(inner.close_reason.is_empty());
 
     match flow.proceed() {
-        Await100Result::SendBody(_) => {}
+        Ok(Await100Result::SendBody(_)) => {}
         _ => panic!("proceed without 100-continue should go to SendBody"),
     }
 }
@@ -43,7 +43,7 @@ fn proceed_after_100_continue() {
     assert!(inner.close_reason.is_empty());
 
     match flow.proceed() {
-        Await100Result::SendBody(_) => {}
+        Ok(Await100Result::SendBody(_)) => {}
         _ => panic!("proceed after 100-continue should go to SendBody"),
     }
 }
@@ -68,7 +68,7 @@ fn proceed_after_403() {
     assert!(!inner.close_reason.is_empty());
 
     match flow.proceed() {
-        Await100Result::RecvResponse(_) => {}
+        Ok(Await100Result::RecvResponse(_)) => {}
         _ => panic!("proceed after 403 should go to RecvResponse"),
     }
 }
@@ -93,7 +93,7 @@ fn proceed_after_200() {
     assert!(!inner.close_reason.is_empty());
 
     match flow.proceed() {
-        Await100Result::RecvResponse(_) => {}
+        Ok(Await100Result::RecvResponse(_)) => {}
         _ => panic!("proceed after 200 should go to RecvResponse"),
     }
 }
@@ -118,7 +118,7 @@ fn proceed_after_403_with_headers() {
     assert!(!inner.close_reason.is_empty());
 
     match flow.proceed() {
-        Await100Result::RecvResponse(_) => {}
+        Ok(Await100Result::RecvResponse(_)) => {}
         _ => panic!("proceed after 403 should go to RecvResponse"),
     }
 }

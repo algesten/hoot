@@ -136,7 +136,7 @@ fn send_body_despite_method() {
     // Write the prelude and discard
     flow.write(&mut vec![0; 1024]).unwrap();
 
-    let result = flow.proceed().unwrap();
+    let result = flow.proceed().unwrap().unwrap();
 
     // We should be able to get to this state without errors.
     assert!(matches!(result, SendRequestResult::SendBody(_)));

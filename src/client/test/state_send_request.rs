@@ -51,7 +51,7 @@ fn proceed_without_body() {
     flow.write(&mut vec![0; 1024]).unwrap();
 
     match flow.proceed() {
-        Some(SendRequestResult::RecvResponse(_)) => {}
+        Ok(Some(SendRequestResult::RecvResponse(_))) => {}
         _ => panic!("Mehod without body should result in RecvResponse"),
     }
 }
@@ -64,7 +64,7 @@ fn proceed_with_body() {
     flow.write(&mut vec![0; 1024]).unwrap();
 
     match flow.proceed() {
-        Some(SendRequestResult::SendBody(_)) => {}
+        Ok(Some(SendRequestResult::SendBody(_))) => {}
         _ => panic!("Method with body should result in SendBody"),
     }
 }
@@ -80,7 +80,7 @@ fn proceed_with_await_100() {
     flow.write(&mut vec![0; 1024]).unwrap();
 
     match flow.proceed() {
-        Some(SendRequestResult::Await100(_)) => {}
+        Ok(Some(SendRequestResult::Await100(_))) => {}
         _ => panic!("Method with body and Expect: 100-continue should result in Await100"),
     }
 }
@@ -98,7 +98,7 @@ fn proceed_without_body_and_expect_100() {
     flow.write(&mut vec![0; 1024]).unwrap();
 
     match flow.proceed() {
-        Some(SendRequestResult::RecvResponse(_)) => {}
+        Ok(Some(SendRequestResult::RecvResponse(_))) => {}
         _ => panic!("Method without body and Expect: 100-continue should result in RecvResponse"),
     }
 }

@@ -301,17 +301,19 @@ impl<B> Flow<B, SendRequest> {
     ///
     /// Returns `None` if the entire request has not been sent. It is guaranteed that if
     /// `can_proceed()` returns `true`, this will return `Some`.
-    pub fn proceed(mut self) -> Option<SendRequestResult<B>> {
+    pub fn proceed(mut self) -> Result<Option<SendRequestResult<B>>, Error> {
         if !self.can_proceed() {
-            return None;
+            return Ok(None);
         }
 
         if self.inner.should_send_body {
-            Some(if self.inner.await_100_continue {
-                SendRequestResult::Await100(Flow::wrap(self.inner))
+            if self.inner.await_100_continue {
+                Ok(Some(SendRequestResult::Await100(Flow::wrap(self.inner))))
             } else {
-                SendRequestResult::SendBody(Flow::wrap(self.inner))
-            })
+                let mut flow = Flow::wrap(self.inner);
+                flow.inner.call.analyze_request()?;
+                Ok(Some(SendRequestResult::SendBody(flow)))
+            }
         } else {
             let call = match self.inner.call {
                 CallHolder::WithoutBody(v) => v,
@@ -325,7 +327,8 @@ impl<B> Flow<B, SendRequest> {
             let call = CallHolder::RecvResponse(call_recv);
             self.inner.call = call;
 
-            Some(SendRequestResult::RecvResponse(Flow::wrap(self.inner)))
+            let flow = Flow::wrap(self.inner);
+            Ok(Some(SendRequestResult::RecvResponse(flow)))
         }
     }
 }
@@ -423,13 +426,15 @@ impl<B> Flow<B, Await100> {
     }
 
     /// Proceed to the next state.
-    pub fn proceed(self) -> Await100Result<B> {
+    pub fn proceed(self) -> Result<Await100Result<B>, Error> {
         // We can always proceed out of Await100
 
         if self.inner.should_send_body {
-            Await100Result::SendBody(Flow::wrap(self.inner))
+            let mut flow = Flow::wrap(self.inner);
+            flow.inner.call.analyze_request()?;
+            Ok(Await100Result::SendBody(flow))
         } else {
-            Await100Result::RecvResponse(Flow::wrap(self.inner))
+            Ok(Await100Result::RecvResponse(Flow::wrap(self.inner)))
         }
     }
 }
