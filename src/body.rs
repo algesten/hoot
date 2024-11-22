@@ -26,7 +26,11 @@ impl Default for SenderMode {
     }
 }
 
-const DEFAULT_CHUNK_SIZE: usize = 10 * 1024;
+// This is 0x2800 in hex.
+pub(crate) const DEFAULT_CHUNK_SIZE: usize = 10 * 1024;
+// 4 is 0x2800 and the other + 4 is for the \r\n\r\n overhead.
+pub(crate) const DEFAULT_CHUNK_OVERHEAD: usize = 4 + 4;
+pub(crate) const DEFAULT_CHUNK_AND_OVERHEAD: usize = DEFAULT_CHUNK_SIZE + DEFAULT_CHUNK_OVERHEAD;
 
 impl BodyWriter {
     pub fn new_none() -> Self {
@@ -150,16 +154,45 @@ impl BodyWriter {
     }
 }
 
+#[allow(unused)]
+pub(crate) fn calculate_chunk_overhead(output_len: usize) -> usize {
+    // The + 1 and floor() is to make even powers of 16 right.
+    // The + 4 is for the \r\n overhead.
+    //
+    // A chunk is with length is:
+    // <digits_in_hex>\r\n
+    // <chunk>\r\n
+    //
+    // And an end/0-sized chunk is:
+    // 0\r\n
+    // \r\n
+    ((output_len as f64).log(16.0) + 1.0).floor() as usize + 4
+}
+
+pub(crate) fn calculate_max_input(output_len: usize) -> usize {
+    let chunks = output_len / DEFAULT_CHUNK_AND_OVERHEAD;
+    let remaining = output_len % DEFAULT_CHUNK_AND_OVERHEAD;
+
+    let tail = if remaining <= DEFAULT_CHUNK_OVERHEAD {
+        0
+    } else {
+        // We can safely assume remaining is < DEFAULT_CHUNK_AND_OVERHEAD which requires
+        // DEFAULT_CHUNK_HEX number of chars to write. Thus whatever the remaining length is,
+        // it will fit into DEFAULT_CHUNK_HEX + 4 (for the \r\n overhead)
+        remaining - DEFAULT_CHUNK_OVERHEAD
+    };
+
+    chunks * DEFAULT_CHUNK_SIZE + tail
+}
+
 fn write_chunk(input: &[u8], input_used: &mut usize, w: &mut Writer, max_chunk: usize) -> bool {
+    // TODO(martin): Redo this to  try and calculate a perfect fit of the
+    // input into the output.
+
     // 5 is the smallest possible overhead
     let available = w.available().saturating_sub(5);
 
     let to_write = input.len().min(max_chunk).min(available);
-
-    // we don't want to write 0 since that indicates end-of-body.
-    if to_write == 0 {
-        return false;
-    }
 
     let success = w.try_write(|w| {
         // chunk length
@@ -428,5 +461,29 @@ impl fmt::Debug for BodyReader {
             Self::Chunked(_) => write!(f, "Chunked"),
             Self::CloseDelimited => write!(f, "CloseDelimited"),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_calculate_max_input() {
+        assert_eq!(calculate_max_input(0), 0);
+        assert_eq!(calculate_max_input(1), 0);
+        assert_eq!(calculate_max_input(2), 0);
+        assert_eq!(calculate_max_input(9), 1);
+        assert_eq!(calculate_max_input(10), 2);
+        assert_eq!(calculate_max_input(11), 3);
+
+        assert_eq!(calculate_max_input(10247), 10239);
+        assert_eq!(calculate_max_input(10248), 10240);
+        assert_eq!(calculate_max_input(10249), 10240);
+        assert_eq!(calculate_max_input(10250), 10240);
+
+        assert_eq!(calculate_max_input(10257), 10241);
+        assert_eq!(calculate_max_input(10258), 10242);
+        assert_eq!(calculate_max_input(10259), 10243);
     }
 }

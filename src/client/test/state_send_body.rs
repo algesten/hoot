@@ -17,8 +17,8 @@ fn write_with_content_length() {
     // deliberately short buffer to require multiple writes
     let mut output = vec![0; 3];
 
-    let overhead = flow.calculate_output_overhead(output.len()).unwrap();
-    assert_eq!(overhead, 0);
+    let overhead = flow.calculate_max_input(output.len());
+    assert_eq!(overhead, 3); // not chunked. entire output can be used as input.
 
     assert!(!flow.can_proceed());
 
@@ -88,10 +88,10 @@ fn write_with_chunked() {
 
     let mut flow = scenario.to_send_body();
 
-    let mut output = vec![0; 1024];
+    let mut output = vec![0; 21 * 1024 + 74];
 
-    let overhead = flow.calculate_output_overhead(output.len()).unwrap();
-    assert_eq!(overhead, 7);
+    let overhead = flow.calculate_max_input(output.len());
+    assert_eq!(overhead, 21554);
 
     assert!(!flow.can_proceed());
 

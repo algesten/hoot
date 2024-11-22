@@ -8,6 +8,7 @@ use http::{
     HeaderMap, HeaderName, HeaderValue, Method, Request, Response, StatusCode, Uri, Version,
 };
 
+use crate::body::calculate_max_input;
 use crate::ext::{HeaderIterExt, MethodExt, StatusExt};
 use crate::parser::try_parse_response;
 use crate::util::ArrayVec;
@@ -487,27 +488,26 @@ impl<B> Flow<B, SendBody> {
             .consume_direct_write(amount)
     }
 
-    /// Calculate the overhead for a certain output length.
+    /// Calculate the max amount of input we can transfer to fill the `output_len`.
     ///
-    /// For `transfer-encoding: chunked`, this can be used to calculate the amount of extra
-    /// bytes that are required to `write()` a certain output.
-    ///
-    /// For non-chunked it returns 0.
-    pub fn calculate_output_overhead(&mut self, output_len: usize) -> Result<usize, Error> {
+    /// For chunked transfer, the input is less than the output.
+    pub fn calculate_max_input(&mut self, output_len: usize) -> usize {
         let call = self.inner.call.as_with_body_mut();
-        call.analyze_request()?;
 
-        Ok(if call.is_chunked() {
-            // The + 1 and floor() is to make even powers of 16 right.
-            // The + 4 is for the \r\n overhead. A chunk is:
-            // <digits_in_hex>\r\n
-            // <chunk>\r\n
-            // 0\r\n
-            // \r\n
-            ((output_len as f64).log(16.0) + 1.0).floor() as usize + 4
-        } else {
-            0
-        })
+        // For non-chunked, the entire output can be used.
+        if !call.is_chunked() {
+            return output_len;
+        }
+
+        calculate_max_input(output_len)
+    }
+
+    /// Test if call is chunked.
+    ///
+    /// This might need some processing, hence the &mut and
+    pub fn is_chunked(&mut self) -> bool {
+        let call = self.inner.call.as_with_body_mut();
+        call.is_chunked()
     }
 
     /// Check whether the request body is fully sent.
