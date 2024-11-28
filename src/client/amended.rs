@@ -1,4 +1,5 @@
-use std::mem;
+use alloc::string::ToString;
+use core::mem;
 
 use http::{HeaderMap, HeaderName, HeaderValue, Method, Request, Uri, Version};
 use url::Url;
@@ -143,7 +144,7 @@ impl<Body> AmendedRequest<Body> {
     }
 
     #[cfg(test)]
-    pub fn headers_vec(&self) -> Vec<(&str, &str)> {
+    pub fn headers_vec(&self) -> alloc::vec::Vec<(&str, &str)> {
         self.headers()
             // unwrap here is ok because the tests using this method should
             // only use header values representable as utf-8.

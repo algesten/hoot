@@ -1,4 +1,6 @@
-use std::fmt;
+use alloc::string::String;
+use alloc::string::ToString;
+use core::fmt;
 
 use http::{Method, Version};
 
@@ -42,7 +44,12 @@ impl From<httparse::Error> for Error {
     }
 }
 
+#[cfg(feature = "std")]
 impl std::error::Error for Error {}
+
+// TODO(martin): uncomment this when we bump MSRV >= 1.81
+// #[cfg(not(feature = "std"))]
+// impl core::error::Error for Error {}
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

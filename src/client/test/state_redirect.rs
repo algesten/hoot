@@ -1,3 +1,6 @@
+use alloc::string::ToString;
+use alloc::vec;
+
 use http::{Method, Response, StatusCode};
 
 use crate::client::flow::RedirectAuthHeaders;

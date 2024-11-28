@@ -1,5 +1,14 @@
-use std::io::Write;
-use std::marker::PhantomData;
+use core::fmt::Write;
+// use std::io::Write;
+use core::marker::PhantomData;
+
+// use std::prelude::rust_2021::*;
+// use std::vec;
+
+use alloc::string::String;
+use alloc::string::ToString;
+use alloc::vec;
+use alloc::vec::Vec;
 
 use http::{Method, Request, Response, StatusCode};
 
@@ -8,6 +17,7 @@ use crate::client::flow::state::{
 };
 use crate::client::flow::{Await100Result, Flow, SendRequestResult};
 use crate::client::flow::{RecvBodyResult, RecvResponseResult};
+use crate::util::Writer;
 
 pub struct Scenario {
     request: Request<()>,
@@ -176,12 +186,13 @@ impl Scenario {
 }
 
 pub fn write_response(r: &Response<()>) -> Vec<u8> {
-    let mut input = Vec::<u8>::new();
+    let mut input = vec![0; 1024];
+    let mut w = Writer::new(&mut input);
 
     let s = r.status();
 
     write!(
-        &mut input,
+        &mut w,
         "{:?} {} {}\r\n",
         r.version(),
         s.as_u16(),
@@ -190,10 +201,15 @@ pub fn write_response(r: &Response<()>) -> Vec<u8> {
     .unwrap();
 
     for (k, v) in r.headers().iter() {
-        write!(&mut input, "{}: {}\r\n", k.as_str(), v.to_str().unwrap()).unwrap();
+        write!(&mut w, "{}: {}\r\n", k.as_str(), v.to_str().unwrap()).unwrap();
     }
 
-    write!(&mut input, "\r\n").unwrap();
+    write!(&mut w, "\r\n").unwrap();
+
+    let len = w.len();
+
+    drop(w);
+    input.truncate(len);
 
     input
 }

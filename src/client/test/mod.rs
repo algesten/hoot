@@ -22,6 +22,6 @@ trait TestSliceExt {
 
 impl TestSliceExt for [u8] {
     fn as_str(&self) -> &str {
-        std::str::from_utf8(self).unwrap()
+        core::str::from_utf8(self).unwrap()
     }
 }

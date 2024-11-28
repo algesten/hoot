@@ -1,5 +1,6 @@
-use std::fmt;
-use std::io::Write;
+use alloc::string::ToString;
+use core::fmt;
+use core::fmt::Write;
 
 use http::{HeaderName, HeaderValue, Method};
 

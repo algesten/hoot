@@ -4,10 +4,17 @@
 //!
 //!
 
+#![no_std]
 #![forbid(unsafe_code)]
 #![warn(clippy::all)]
 #![allow(clippy::uninlined_format_args)]
+#![allow(clippy::needless_lifetimes)]
 #![deny(missing_docs)]
+
+extern crate alloc;
+
+#[cfg(feature = "std")]
+extern crate std;
 
 #[macro_use]
 extern crate log;

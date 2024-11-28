@@ -1,8 +1,9 @@
 //! A single request-response. No redirection or other logic.
 
-use std::fmt;
-use std::io::Write;
-use std::marker::PhantomData;
+use alloc::string::ToString;
+use core::fmt;
+use core::fmt::Write;
+use core::marker::PhantomData;
 
 use http::{HeaderName, HeaderValue, Method, Request, Response, StatusCode, Version};
 
@@ -643,7 +644,8 @@ impl fmt::Debug for Phase {
 mod test {
     use super::*;
 
-    use std::str;
+    use alloc::vec;
+    use core::str;
 
     use http::{Method, Request};
 

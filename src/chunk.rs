@@ -178,6 +178,8 @@ impl Dechunker {
 
 #[cfg(test)]
 mod test {
+    use alloc::string::String;
+
     use super::*;
 
     #[test]
