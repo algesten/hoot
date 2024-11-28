@@ -1,12 +1,13 @@
 //! A sequence of calls, such as following redirects.
 
-use std::fmt;
-use std::marker::PhantomData;
+use alloc::string::String;
+use alloc::string::ToString;
+use core::fmt;
+use core::marker::PhantomData;
 
 use http::uri::Scheme;
-use http::{
-    HeaderMap, HeaderName, HeaderValue, Method, Request, Response, StatusCode, Uri, Version,
-};
+use http::{HeaderMap, HeaderName, HeaderValue, Method, Request};
+use http::{Response, StatusCode, Uri, Version};
 
 use crate::body::calculate_max_input;
 use crate::ext::{HeaderIterExt, MethodExt, StatusExt};

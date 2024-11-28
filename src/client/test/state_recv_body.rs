@@ -1,3 +1,5 @@
+use alloc::vec;
+
 use http::Response;
 
 use crate::client::flow::CloseReason;

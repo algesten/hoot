@@ -1,6 +1,5 @@
-use std::fmt;
-use std::io::{self, Cursor};
-use std::ops::{Deref, DerefMut};
+use core::fmt;
+use core::ops::{Deref, DerefMut};
 
 pub(crate) fn find_crlf(b: &[u8]) -> Option<usize> {
     let cr = b.iter().position(|c| *c == b'\r')?;
@@ -30,38 +29,56 @@ pub(crate) fn compare_lowercase_ascii(a: &str, lowercased: &str) -> bool {
     true
 }
 
-pub(crate) struct Writer<'a>(pub Cursor<&'a mut [u8]>);
+pub(crate) struct Writer<'a>(&'a mut [u8], usize);
 
 impl<'a> Writer<'a> {
     pub(crate) fn new(output: &'a mut [u8]) -> Writer<'a> {
-        Self(Cursor::new(output))
+        Self(output, 0)
     }
 
-    pub fn len(&self) -> usize {
-        self.0.position() as usize
+    #[inline(always)]
+    pub(crate) fn len(&self) -> usize {
+        self.1
     }
 
-    pub fn available(&self) -> usize {
-        self.0.get_ref().len() - self.len()
+    #[inline(always)]
+    pub(crate) fn available(&self) -> usize {
+        self.0.len() - self.1
     }
 
-    pub(crate) fn try_write(&mut self, block: impl Fn(&mut Self) -> io::Result<()>) -> bool {
-        let pos = self.0.position();
+    pub(crate) fn try_write(
+        &mut self,
+        block: impl Fn(&mut Self) -> Result<(), fmt::Error>,
+    ) -> bool {
+        let pos = self.1;
         let success = (block)(self).is_ok();
         if !success {
-            self.0.set_position(pos);
+            self.1 = pos;
         }
         success
     }
+
+    #[inline(always)]
+    pub(crate) fn write_all(&mut self, to_write: &[u8]) -> Result<(), fmt::Error> {
+        let len = to_write.len();
+
+        if len > self.available() {
+            return Err(fmt::Error);
+        }
+
+        let buf = &mut self.0[self.1..];
+        buf[..len].copy_from_slice(to_write);
+
+        self.1 += len;
+
+        Ok(())
+    }
 }
 
-impl<'a> io::Write for Writer<'a> {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0.write(buf)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.0.flush()
+impl<'a> fmt::Write for Writer<'a> {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        let bytes = s.as_bytes();
+        self.write_all(bytes)
     }
 }
 
@@ -70,7 +87,7 @@ const CHARS_PER_ROW: usize = 16;
 impl<'a> Drop for Writer<'a> {
     fn drop(&mut self) {
         let len = self.len();
-        log_data(&self.0.get_ref()[..len]);
+        log_data(&self.0[..len]);
     }
 }
 
@@ -156,7 +173,7 @@ impl<T, const N: usize> ArrayVec<T, N> {
     pub fn from_fn(cb: impl FnMut(usize) -> T) -> Self {
         Self {
             len: 0,
-            arr: std::array::from_fn(cb),
+            arr: core::array::from_fn(cb),
         }
     }
 

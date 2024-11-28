@@ -1,3 +1,5 @@
+use alloc::vec;
+
 use crate::client::flow::SendRequestResult;
 
 use super::scenario::Scenario;
